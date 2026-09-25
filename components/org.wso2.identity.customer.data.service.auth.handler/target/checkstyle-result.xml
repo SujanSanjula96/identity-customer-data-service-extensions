@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<checkstyle version="8.19">
+<file name="/Users/sujan/workspace-agent/cds-b2b-poc/identity-customer-data-service-extensions/components/org.wso2.identity.customer.data.service.auth.handler/src/main/java/org/wso2/identity/cds/auth/handler/internal/CDSPostAuthHandlerComponent.java">
+</file>
+<file name="/Users/sujan/workspace-agent/cds-b2b-poc/identity-customer-data-service-extensions/components/org.wso2.identity.customer.data.service.auth.handler/src/main/java/org/wso2/identity/cds/auth/handler/CDSPostAuthnHandler.java">
+</file>
+</checkstyle>

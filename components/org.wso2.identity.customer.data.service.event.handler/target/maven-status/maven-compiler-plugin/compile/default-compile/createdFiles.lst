@@ -1,0 +1,5 @@
+org/wso2/identity/cds/event/handler/OrganizationEventHandler.class
+org/wso2/identity/cds/event/handler/ClaimEventHandler.class
+org/wso2/identity/cds/event/handler/IdentityEventHandler.class
+org/wso2/identity/cds/event/handler/internal/IdentifyEventHandlerComponent.class
+org/wso2/identity/cds/event/handler/Constants.class

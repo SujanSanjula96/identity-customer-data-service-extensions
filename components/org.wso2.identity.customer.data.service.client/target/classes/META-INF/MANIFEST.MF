@@ -1,0 +1,27 @@
+Manifest-Version: 1.0
+Bnd-LastModified: 1790314307426
+Build-Jdk: 21.0.10
+Built-By: sujan
+Bundle-Description: WSO2 is an open source application development softw
+ are company focused on providing service-oriented        architecture s
+ olutions for professional developers.
+Bundle-DocURL: http://www.wso2.org/
+Bundle-License: http://www.apache.org/licenses/LICENSE-2.0.txt
+Bundle-ManifestVersion: 2
+Bundle-Name: WSO2 Identity CDS Client
+Bundle-SymbolicName: org.wso2.identity.customer.data.service.client
+Bundle-Vendor: WSO2
+Bundle-Version: 0.1.13.SNAPSHOT
+Created-By: Apache Maven Bundle Plugin
+Export-Package: org.wso2.identity.cds.client;version="0.1.13.SNAPSHOT"
+Import-Package: org.apache.commons.logging;version="[1.2,2)",com.fasterx
+ ml.jackson.databind;version="[2.13.0.0,3.0.0)",org.wso2.securevault;ver
+ sion="[1.1.0,2.0.0)",org.wso2.securevault.commons;version="[1.1.0,2.0.0
+ )",com.fasterxml.jackson.core;version="[2.13,3)",org.apache.commons.lan
+ g;version="[2.6,3)",org.apache.http;version="[4.4,5)",org.apache.http.c
+ lient.methods;version="[4.5,5)",org.apache.http.entity;version="[4.4,5)
+ ",org.apache.http.impl.client;version="[4.5,5)",org.wso2.carbon.identit
+ y.core.util;version="[7.8,8)",com.google.gson;version="[2.9.0,3.0.0)"
+Require-Capability: osgi.ee;filter:="(&(osgi.ee=JavaSE)(version=1.8))"
+SCM-Revision: cda511ea04a41bd51e801041d9f5a2714eb4a5d8
+Tool: Bnd-3.2.0.201605172007

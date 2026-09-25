@@ -1,0 +1,28 @@
+Manifest-Version: 1.0
+Bnd-LastModified: 1790314309372
+Build-Jdk: 21.0.10
+Built-By: sujan
+Bundle-Description: WSO2 Identity CDS Custom Event Handler Bundle
+Bundle-DocURL: http://www.wso2.org/
+Bundle-License: http://www.apache.org/licenses/LICENSE-2.0.txt
+Bundle-ManifestVersion: 2
+Bundle-Name: org.wso2.identity.customer.data.service.event.handler
+Bundle-SymbolicName: org.wso2.identity.customer.data.service.event.handl
+ er
+Bundle-Vendor: WSO2
+Bundle-Version: 0.1.13.SNAPSHOT
+Created-By: Apache Maven Bundle Plugin
+Export-Package: org.wso2.identity.cds.event.handler;uses:="org.wso2.carb
+ on.identity.event,org.wso2.carbon.identity.event.event,org.wso2.carbon.
+ identity.event.handler";version="0.1.13"
+Import-Package: org.wso2.identity.cds.client;version="0.1.13.SNAPSHOT",o
+ rg.osgi.framework;version="[1.7.0,2.0.0)",org.osgi.service.component;ve
+ rsion="[1.2.0,2.0.0)",org.apache.commons.logging;version="[1.2,2.0)",or
+ g.wso2.carbon.identity.core.util;version="[7.0.0,8.0.0)",org.wso2.carbo
+ n.identity.event;version="[7.0.0,8.0.0)",org.wso2.carbon.identity.event
+ .event;version="[7.0.0,8.0.0)",org.wso2.carbon.identity.event.handler;v
+ ersion="[7.0.0,8.0.0)"
+Require-Capability: osgi.ee;filter:="(&(osgi.ee=JavaSE)(version=1.8))"
+SCM-Revision: cda511ea04a41bd51e801041d9f5a2714eb4a5d8
+Service-Component: OSGI-INF/org.wso2.identity.cds.event.handler.xml
+Tool: Bnd-3.2.0.201605172007

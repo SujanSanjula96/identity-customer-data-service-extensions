@@ -42,6 +42,7 @@ public class CDSClient {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final String PROFILE_SYNC_API = "%s/t/%s/cds/api/v1/profiles/sync";
     private static final String PROFILE_SCHEMA_SYNC_API = "%s/t/%s/cds/api/v1/profile-schema/sync";
+    private static final String ORGANIZATION_SYNC_API = "%s/t/%s/cds/api/v1/organizations/sync";
     private static final String CONTENT_TYPE = "Content-Type";
     private static final String AUTHORIZATION = "Authorization";
     private static final String APPLICATION_JSON = "application/json";
@@ -83,6 +84,18 @@ public class CDSClient {
             doPost(url, json, tenant, "profile-schema-sync");
         } catch (IOException e) {
             log.warn("I/O error while triggering CDS profile schema sync. tenant="
+                    + Utils.sanitizeForLog(tenant), e);
+        }
+    }
+
+    // Trigger organization sync in CDS
+    public static void triggerOrganizationSync(Map<String, Object> payload, String tenant) {
+        try {
+            String json = MAPPER.writeValueAsString(payload);
+            String url = String.format(ORGANIZATION_SYNC_API, Utils.getCDSServiceURL(), tenant);
+            doPost(url, json, tenant, "organization-sync");
+        } catch (IOException e) {
+            log.warn("I/O error while triggering CDS organization sync. tenant="
                     + Utils.sanitizeForLog(tenant), e);
         }
     }
