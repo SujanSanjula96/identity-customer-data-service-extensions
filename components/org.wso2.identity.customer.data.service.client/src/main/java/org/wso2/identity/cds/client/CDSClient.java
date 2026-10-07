@@ -40,9 +40,10 @@ public class CDSClient {
 
     private static final Log log = LogFactory.getLog(CDSClient.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final String PROFILE_SYNC_API = "%s/t/%s/cds/api/v1/profiles/sync";
-    private static final String PROFILE_SCHEMA_SYNC_API = "%s/t/%s/cds/api/v1/profile-schema/sync";
-    private static final String ORGANIZATION_SYNC_API = "%s/t/%s/cds/api/v1/organizations/sync";
+    // The second value is the path of the org: /t/{root_handle} or /t/{root_handle}/o/{org_id}.
+    private static final String PROFILE_SYNC_API = "%s%s/cds/api/v1/profiles/sync";
+    private static final String PROFILE_SCHEMA_SYNC_API = "%s%s/cds/api/v1/profile-schema/sync";
+    private static final String ORGANIZATION_SYNC_API = "%s%s/cds/api/v1/organizations/sync";
     private static final String CONTENT_TYPE = "Content-Type";
     private static final String AUTHORIZATION = "Authorization";
     private static final String APPLICATION_JSON = "application/json";
@@ -92,7 +93,8 @@ public class CDSClient {
     public static void triggerOrganizationSync(Map<String, Object> payload, String tenant) {
         try {
             String json = MAPPER.writeValueAsString(payload);
-            String url = String.format(ORGANIZATION_SYNC_API, Utils.getCDSServiceURL(), tenant);
+            String url = String.format(ORGANIZATION_SYNC_API, Utils.getCDSServiceURL(),
+                    OrganizationPathResolver.pathOf(tenant));
             doPost(url, json, tenant, "organization-sync");
         } catch (IOException e) {
             log.warn("I/O error while triggering CDS organization sync. tenant="
@@ -184,12 +186,13 @@ public class CDSClient {
 
     // Build the Profile Sync API URL
     private static String buildProfileSyncAPI(String tenant) {
-        return String.format(PROFILE_SYNC_API, Utils.getCDSServiceURL(), tenant);
+        return String.format(PROFILE_SYNC_API, Utils.getCDSServiceURL(), OrganizationPathResolver.pathOf(tenant));
     }
 
     // Build the Profile Schema Sync API URL
     private static String buildProfileSchemaSyncAPI(String tenant) {
-        return String.format(PROFILE_SCHEMA_SYNC_API, Utils.getCDSServiceURL(), tenant);
+        return String.format(PROFILE_SCHEMA_SYNC_API, Utils.getCDSServiceURL(),
+                OrganizationPathResolver.pathOf(tenant));
     }
 
     private static final class CdsError {
