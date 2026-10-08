@@ -24,10 +24,14 @@ import org.osgi.service.component.ComponentContext;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Deactivate;
+import org.wso2.carbon.identity.application.mgt.listener.ApplicationMgtListener;
+import org.wso2.carbon.identity.application.mgt.listener.ApplicationResourceManagementListener;
 import org.wso2.carbon.identity.event.handler.AbstractEventHandler;
 import org.wso2.identity.cds.event.handler.ClaimEventHandler;
 import org.wso2.identity.cds.event.handler.IdentityEventHandler;
 import org.wso2.identity.cds.event.handler.OrganizationEventHandler;
+import org.wso2.identity.cds.event.handler.app.SharedApplicationListener;
+import org.wso2.identity.cds.event.handler.app.SharedApplicationResourceListener;
 
 /**
  * OSGi component that registers the CDS IdentifyEventHandler.
@@ -46,6 +50,11 @@ public class IdentifyEventHandlerComponent {
         ctx.getBundleContext().registerService(AbstractEventHandler.class.getName(), claimEventHandler, null);
         OrganizationEventHandler organizationEventHandler = new OrganizationEventHandler();
         ctx.getBundleContext().registerService(AbstractEventHandler.class.getName(), organizationEventHandler, null);
+        // The main app properties of shared apps, for the sub org Console (R-016).
+        ctx.getBundleContext().registerService(ApplicationMgtListener.class.getName(),
+                new SharedApplicationListener(), null);
+        ctx.getBundleContext().registerService(ApplicationResourceManagementListener.class.getName(),
+                new SharedApplicationResourceListener(), null);
         log.info("CDS EventHandlers activated successfully.");
     }
 
