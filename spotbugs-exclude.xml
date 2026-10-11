@@ -21,4 +21,8 @@
         <Class name="org.wso2.identity.cds.auth.listener.internal.AuthListenerServiceDataHolder"/>
         <Bug pattern="EI_EXPOSE_STATIC_REP2,EI_EXPOSE_STATIC_REP,EI_EXPOSE_REP2,EI_EXPOSE_REP,MS_EXPOSE_REP"/>
     </Match>
+    <Match>
+        <Class name="org.wso2.identity.cds.client.internal.CDSClientDataHolder"/>
+        <Bug pattern="EI_EXPOSE_REP2,EI_EXPOSE_REP,MS_EXPOSE_REP,SING_SINGLETON_GETTER_NOT_SYNCHRONIZED"/>
+    </Match>
 </FindBugsFilter>

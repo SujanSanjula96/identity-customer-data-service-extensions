@@ -60,8 +60,17 @@
             <artifactId>org.wso2.securevault</artifactId>
         </dependency>
         <dependency>
+            <groupId>org.wso2.carbon.identity.organization.management.core</groupId>
+            <artifactId>org.wso2.carbon.identity.organization.management.service</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.testng</groupId>
             <artifactId>testng</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -77,11 +86,23 @@
                     <instructions>
                         <Bundle-SymbolicName>org.wso2.identity.customer.data.service.client</Bundle-SymbolicName>
                         <Bundle-Name>WSO2 Identity CDS Client</Bundle-Name>
+                        <Private-Package>
+                            org.wso2.identity.cds.client.internal
+                        </Private-Package>
                         <Export-Package>
+                            !org.wso2.identity.cds.client.internal,
                             org.wso2.identity.cds.client;version="${project.version}"
                         </Export-Package>
                         <Import-Package>
                             org.apache.commons.logging,
+                            org.apache.commons.lang;version="${commons-lang.wso2.osgi.version.range}",
+                            org.osgi.service.component;version="${osgi.service.component.imp.pkg.version.range}",
+                            org.wso2.carbon.identity.organization.management.service;
+                            version="${org.wso2.carbon.identity.organization.management.core.version.range}",
+                            org.wso2.carbon.identity.organization.management.service.exception;
+                            version="${org.wso2.carbon.identity.organization.management.core.version.range}",
+                            org.wso2.carbon.identity.organization.management.service.util;
+                            version="${org.wso2.carbon.identity.organization.management.core.version.range}",
                             com.google.gson;version="${gson.osgi.version.range}",
                             com.fasterxml.jackson.databind;version="${jackson.databind.osgi.version.range}",
                             org.wso2.securevault.*; version="${org.wso2.securevault.import.version.range}",
