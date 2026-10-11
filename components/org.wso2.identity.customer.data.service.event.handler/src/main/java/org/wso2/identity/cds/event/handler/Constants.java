@@ -34,5 +34,13 @@ public class Constants {
     public static final String PROFILE_COOKIE_CLAIM = "http://wso2.org/claims/cdsProfile";
     public static final String USER_ID_CLAIM = "http://wso2.org/claims/userid";
 
+    // Organization management events and their properties.
+    public static final String POST_ADD_ORGANIZATION = "POST_ADD_ORGANIZATION";
+    public static final String POST_UPDATE_ORGANIZATION = "POST_UPDATE_ORGANIZATION";
+    public static final String POST_PATCH_ORGANIZATION = "POST_PATCH_ORGANIZATION";
+    public static final String POST_DELETE_ORGANIZATION = "POST_DELETE_ORGANIZATION";
+    public static final String EVENT_PROP_ORGANIZATION = "ORGANIZATION";
+    public static final String EVENT_PROP_ORGANIZATION_ID = "ORGANIZATION_ID";
+
 
 }

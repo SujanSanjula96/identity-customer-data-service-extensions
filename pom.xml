@@ -99,9 +99,20 @@
                 <version>${wso2.securevault.version}</version>
             </dependency>
             <dependency>
+                <groupId>org.wso2.carbon.identity.organization.management.core</groupId>
+                <artifactId>org.wso2.carbon.identity.organization.management.service</artifactId>
+                <version>${org.wso2.carbon.identity.organization.management.core.version}</version>
+            </dependency>
+            <dependency>
                 <groupId>org.testng</groupId>
                 <artifactId>testng</artifactId>
                 <version>${testng.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.mockito</groupId>
+                <artifactId>mockito-core</artifactId>
+                <version>${mockito.version}</version>
                 <scope>test</scope>
             </dependency>
         </dependencies>
@@ -258,6 +269,7 @@
 
         <!-- Test Dependency Versions -->
         <testng.version>7.4.0</testng.version>
+        <mockito.version>5.3.1</mockito.version>
 
         <!-- Maven Plugin Versions -->
         <carbon.p2.plugin.version>5.1.2</carbon.p2.plugin.version>
@@ -293,6 +305,11 @@
         <carbon.identity.framework.version>7.8.600</carbon.identity.framework.version>
         <carbon.identity.framework.imp.pkg.version.range>[7.0.0, 8.0.0)
         </carbon.identity.framework.imp.pkg.version.range>
+        <org.wso2.carbon.identity.organization.management.core.version>1.1.48
+        </org.wso2.carbon.identity.organization.management.core.version>
+        <org.wso2.carbon.identity.organization.management.core.version.range>[1.0.0, 2.0.0)
+        </org.wso2.carbon.identity.organization.management.core.version.range>
+        <commons-lang.wso2.osgi.version.range>[2.6.0, 3.0.0)</commons-lang.wso2.osgi.version.range>
     </properties>
 
 </project>

@@ -24,9 +24,13 @@ import org.osgi.service.component.ComponentContext;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Deactivate;
+import org.wso2.carbon.identity.core.ThreadLocalAwareExecutors;
 import org.wso2.carbon.identity.event.handler.AbstractEventHandler;
 import org.wso2.identity.cds.event.handler.ClaimEventHandler;
 import org.wso2.identity.cds.event.handler.IdentityEventHandler;
+import org.wso2.identity.cds.event.handler.OrganizationEventHandler;
+
+import java.util.concurrent.ExecutorService;
 
 /**
  * OSGi component that registers the CDS IdentifyEventHandler.
@@ -36,6 +40,8 @@ public class IdentifyEventHandlerComponent {
 
     private static final Log log = LogFactory.getLog(IdentifyEventHandlerComponent.class);
 
+    private ExecutorService organizationEventExecutor;
+
     @Activate
     protected void activate(ComponentContext ctx) {
 
@@ -43,12 +49,20 @@ public class IdentifyEventHandlerComponent {
         ctx.getBundleContext().registerService(AbstractEventHandler.class.getName(), identityEventHandler, null);
         ClaimEventHandler claimEventHandler = new ClaimEventHandler();
         ctx.getBundleContext().registerService(AbstractEventHandler.class.getName(), claimEventHandler, null);
+        // One thread keeps the organization events in order.
+        organizationEventExecutor = ThreadLocalAwareExecutors.newFixedThreadPool(1);
+        OrganizationEventHandler organizationEventHandler = new OrganizationEventHandler(organizationEventExecutor);
+        ctx.getBundleContext().registerService(AbstractEventHandler.class.getName(), organizationEventHandler, null);
         log.info("CDS EventHandlers activated successfully.");
     }
 
     @Deactivate
     protected void deactivate(ComponentContext ctx) {
 
+        if (organizationEventExecutor != null) {
+            organizationEventExecutor.shutdown();
+            organizationEventExecutor = null;
+        }
         if (log.isDebugEnabled()) {
             log.debug("CDS EventHandlers deactivated.");
         }
