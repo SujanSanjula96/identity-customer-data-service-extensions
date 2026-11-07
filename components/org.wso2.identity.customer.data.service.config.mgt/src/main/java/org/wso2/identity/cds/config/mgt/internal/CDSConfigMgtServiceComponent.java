@@ -27,6 +27,7 @@ import org.osgi.service.component.annotations.Deactivate;
 import org.osgi.service.component.annotations.Reference;
 import org.osgi.service.component.annotations.ReferenceCardinality;
 import org.osgi.service.component.annotations.ReferencePolicy;
+import org.wso2.carbon.identity.application.mgt.listener.ApplicationMgtListener;
 import org.wso2.carbon.identity.configuration.mgt.core.ConfigurationManager;
 import org.wso2.identity.cds.config.mgt.CDSConfigService;
 
@@ -43,6 +44,8 @@ public class CDSConfigMgtServiceComponent {
 
         context.getBundleContext().registerService(CDSConfigService.class.getName(), new CDSConfigServiceImpl(),
                 null);
+        context.getBundleContext().registerService(ApplicationMgtListener.class.getName(),
+                new CDSApplicationShareListener(), null);
         if (LOG.isDebugEnabled()) {
             LOG.debug("CDS config management component is activated.");
         }

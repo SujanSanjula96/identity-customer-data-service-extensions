@@ -62,6 +62,8 @@ public class CDSConfigServiceImpl implements CDSConfigService {
     private static final String CDS_CONFIG_ENABLED_ATTRIBUTE = "enabled";
     private static final String CDS_TENANT_CONFIG_ENABLE_PROPERTY = "CustomerDataService.TenantConfigEnable";
 
+    private final CDSServiceCredentialsManager serviceCredentialsManager = new CDSServiceCredentialsManager();
+
     @Override
     public CDSConfig getCDSConfig(String tenantDomain) throws CDSConfigMgtException {
 
@@ -92,6 +94,12 @@ public class CDSConfigServiceImpl implements CDSConfigService {
 
         if (!Utils.isCDSEnabled()) {
             throw clientException(ERROR_CODE_CDS_NOT_ENABLED, null);
+        }
+        if (cdsConfig.isEnabled()) {
+            // CDS needs the credentials of the tenant before it is enabled: enabling syncs the profile schema from
+            // the Identity Server. They are renewed and sent again each time the tenant turns CDS on, so that turning
+            // CDS off and on recovers from credentials that no longer work.
+            serviceCredentialsManager.ensureServiceCredentials(tenantDomain, !isTenantCDSEnabled(tenantDomain));
         }
         // CDS gets the configuration first. If CDS does not accept it, the configuration is not stored.
         try {
@@ -124,7 +132,16 @@ public class CDSConfigServiceImpl implements CDSConfigService {
         return tenantDomain;
     }
 
-    private Optional<Boolean> getTenantCDSEnabled(String tenantDomain) throws ConfigurationManagementException {
+    private boolean isTenantCDSEnabled(String tenantDomain) throws CDSConfigMgtServerException {
+
+        try {
+            return getTenantCDSEnabled(tenantDomain).orElse(false);
+        } catch (ConfigurationManagementException e) {
+            throw serverException(ERROR_CODE_CDS_CONFIG_RETRIEVE, e, Utils.sanitizeForLog(tenantDomain));
+        }
+    }
+
+        private Optional<Boolean> getTenantCDSEnabled(String tenantDomain) throws ConfigurationManagementException {
 
         ConfigurationManager configurationManager = CDSConfigMgtDataHolder.getInstance().getConfigurationManager();
         Resource resource;

@@ -38,6 +38,7 @@ import org.wso2.identity.cds.client.exception.CDSServerException;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -54,6 +55,11 @@ public class CDSClient {
     // The CDS config is set on the root organization only.
     private static final String CONFIG_API = "%s/t/%s/cds/api/v1/config";
     private static final String CDS_ENABLED = "cds_enabled";
+    // Service credentials are synced on the root organization only.
+    private static final String SERVICE_CREDENTIALS_SYNC_API = "%s/t/%s/cds/api/v1/service-credentials/sync";
+    private static final String SERVICE_CREDENTIALS_UPDATED = "SERVICE_CREDENTIALS_UPDATED";
+    private static final String CLIENT_ID = "client_id";
+    private static final String CLIENT_SECRET = "client_secret";
     private static final String CONTENT_TYPE = "Content-Type";
     private static final String AUTHORIZATION = "Authorization";
     private static final String APPLICATION_JSON = "application/json";
@@ -62,7 +68,11 @@ public class CDSClient {
     private static final int HTTP_BAD_REQUEST = 400;
     private static final int HTTP_CLIENT_ERROR_MIN = 400;
     private static final int HTTP_SERVER_ERROR_MIN = 500;
+    private static final int HTTP_NO_CONTENT = 204;
+    private static final int HTTP_NOT_FOUND = 404;
+    private static final int HTTP_METHOD_NOT_ALLOWED = 405;
     private static final String CDS_NOT_ENABLED_ERROR_CODE = "CDS-16001";
+    private static final String SERVICE_CREDENTIALS_NOT_CONFIGURED_ERROR_CODE = "CDS-16004";
 
     // Trigger identity data sync in CDS
     public static void triggerIdentityDataSync(String event, Map<String, Object> payload, String tenant) {
@@ -244,6 +254,77 @@ public class CDSClient {
      */
     static boolean isCdsNotEnabled(int statusCode, String errorCode) {
         return statusCode == HTTP_BAD_REQUEST && CDS_NOT_ENABLED_ERROR_CODE.equals(errorCode);
+    }
+
+    /**
+     * Send the credentials of the application CDS calls the Identity Server with for a tenant, with
+     * POST /service-credentials/sync. CDS gets a token with the credentials before it stores them.
+     *
+     * @param tenant       Tenant domain of a root organization.
+     * @param clientId     Client ID of the application.
+     * @param clientSecret Client secret of the application.
+     * @return false if CDS does not store service credentials: it has no encryption key (CDS-16004), or it is a CDS
+     * without the endpoint. CDS then uses its configured client for every organization.
+     * @throws CDSException CDSClientException if CDS refuses the credentials. CDSServerException if CDS is not
+     *                      configured, cannot be reached, or fails.
+     */
+    public static boolean syncServiceCredentials(String tenant, String clientId, String clientSecret)
+            throws CDSException {
+
+        String serviceURL = Utils.getCDSServiceURL();
+        String credentials = Utils.getBase64EncodedCredentials();
+        if (StringUtils.isBlank(serviceURL) || StringUtils.isBlank(credentials)) {
+            String error = "The Customer Data Service is not configured.";
+            throw new CDSServerException(error, error, null);
+        }
+
+        Map<String, String> event = new HashMap<>();
+        event.put(EVENT, SERVICE_CREDENTIALS_UPDATED);
+        event.put(CLIENT_ID, clientId);
+        event.put(CLIENT_SECRET, clientSecret);
+
+        String sanitizedTenant = Utils.sanitizeForLog(tenant);
+        try (CloseableHttpClient client = HttpClients.createDefault()) {
+            HttpPost httpPost = new HttpPost(String.format(SERVICE_CREDENTIALS_SYNC_API, serviceURL, tenant));
+            httpPost.setEntity(new StringEntity(MAPPER.writeValueAsString(event), StandardCharsets.UTF_8));
+            httpPost.setHeader(CONTENT_TYPE, APPLICATION_JSON);
+            httpPost.setHeader(AUTHORIZATION, "Basic " + credentials);
+
+            try (CloseableHttpResponse response = client.execute(httpPost)) {
+                int statusCode = response.getStatusLine().getStatusCode();
+                if (statusCode == HTTP_OK || statusCode == HTTP_NO_CONTENT) {
+                    if (log.isDebugEnabled()) {
+                        log.debug("CDS service credentials sync succeeded for tenant: " + sanitizedTenant);
+                    }
+                    return true;
+                }
+                if (statusCode == HTTP_NOT_FOUND || statusCode == HTTP_METHOD_NOT_ALLOWED) {
+                    // A CDS without the endpoint uses its configured client.
+                    return false;
+                }
+
+                String responseBody = "";
+                if (response.getEntity() != null && response.getEntity().getContent() != null) {
+                    responseBody = new String(response.getEntity().getContent().readAllBytes(),
+                            StandardCharsets.UTF_8);
+                }
+                CdsError cdsError = parseCdsError(responseBody);
+                if (statusCode == HTTP_BAD_REQUEST && SERVICE_CREDENTIALS_NOT_CONFIGURED_ERROR_CODE.equals(
+                        cdsError.code)) {
+                    return false;
+                }
+                String description = String.format("The Customer Data Service returned status %d, code %s: %s",
+                        statusCode, cdsError.code, cdsError.description);
+                if (statusCode >= HTTP_CLIENT_ERROR_MIN && statusCode < HTTP_SERVER_ERROR_MIN) {
+                    throw new CDSClientException(cdsError.message, description, cdsError.code);
+                }
+                throw new CDSServerException(cdsError.message, description, cdsError.code);
+            }
+        } catch (IOException e) {
+            log.warn("I/O error while syncing the CDS service credentials. tenant=" + sanitizedTenant, e);
+            throw new CDSServerException("The Customer Data Service cannot be reached.",
+                    "An I/O error occurred while the service credentials were sent.", null, e);
+        }
     }
 
     private static CdsError parseCdsError(String responseBody) {

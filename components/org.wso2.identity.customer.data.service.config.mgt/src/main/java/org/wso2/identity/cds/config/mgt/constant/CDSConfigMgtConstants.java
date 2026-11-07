@@ -46,7 +46,11 @@ public class CDSConfigMgtConstants {
         ERROR_CODE_CDS_CONFIG_SYNC("65003",
                 "Unable to update CDS configuration.",
                 "Server encountered an error while sending the CDS configuration of %s to the Customer Data " +
-                        "Service. %s");
+                        "Service. %s"),
+        ERROR_CODE_CDS_SERVICE_CREDENTIALS("65004",
+                "Unable to set up the CDS service credentials.",
+                "Server encountered an error while setting up the application the Customer Data Service calls " +
+                        "the Identity Server with for %s. %s");
 
         private final String code;
         private final String message;
