@@ -25,7 +25,9 @@ import org.wso2.carbon.identity.application.authentication.framework.context.Aut
 import org.wso2.carbon.identity.application.authentication.framework.exception.PostAuthenticationFailedException;
 import org.wso2.carbon.identity.application.authentication.framework.handler.request.AbstractPostAuthnHandler;
 import org.wso2.carbon.identity.application.authentication.framework.handler.request.PostAuthnHandlerFlowStatus;
-import org.wso2.identity.cds.client.Utils;
+import org.wso2.identity.cds.auth.handler.internal.CDSPostAuthHandlerDataHolder;
+import org.wso2.identity.cds.config.mgt.CDSConfigService;
+import org.wso2.identity.cds.config.mgt.exception.CDSConfigMgtException;
 
 import java.util.Optional;
 
@@ -47,7 +49,7 @@ public class CDSPostAuthnHandler extends AbstractPostAuthnHandler {
                                              AuthenticationContext context)
             throws PostAuthenticationFailedException {
 
-        if (!Utils.isCDSEnabled()) {
+        if (!isCDSEnabled(context.getTenantDomain())) {
             return PostAuthnHandlerFlowStatus.SUCCESS_COMPLETED;
         }
 
@@ -84,5 +86,19 @@ public class CDSPostAuthnHandler extends AbstractPostAuthnHandler {
             }
         }
         return Optional.empty();
+    }
+
+    private boolean isCDSEnabled(String tenantDomain) {
+
+        CDSConfigService cdsConfigService = CDSPostAuthHandlerDataHolder.getCDSConfigService();
+        if (cdsConfigService == null) {
+            return false;
+        }
+        try {
+            return cdsConfigService.isCDSEnabled(tenantDomain);
+        } catch (CDSConfigMgtException e) {
+            LOG.warn(e.getMessage() + ". CDS is not enabled for the tenant.", e);
+            return false;
+        }
     }
 }

@@ -24,8 +24,12 @@ import org.osgi.service.component.ComponentContext;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Deactivate;
+import org.osgi.service.component.annotations.Reference;
+import org.osgi.service.component.annotations.ReferenceCardinality;
+import org.osgi.service.component.annotations.ReferencePolicy;
 import org.wso2.carbon.identity.event.handler.AbstractEventHandler;
 import org.wso2.identity.cds.auth.listener.AuthEventListener;
+import org.wso2.identity.cds.config.mgt.CDSConfigService;
 
 /**
  * This class contains the implementation of the service component of the authentication event listener.
@@ -53,5 +57,21 @@ public class AuthListenerServiceComponent {
         if (LOG.isDebugEnabled()) {
             LOG.debug("CDS post authentication listener deactivated");
         }
+    }
+
+    @Reference(
+            name = "cds.config.service",
+            service = CDSConfigService.class,
+            cardinality = ReferenceCardinality.MANDATORY,
+            policy = ReferencePolicy.DYNAMIC,
+            unbind = "unsetCDSConfigService")
+    protected void setCDSConfigService(CDSConfigService cdsConfigService) {
+
+        AuthListenerServiceDataHolder.setCDSConfigService(cdsConfigService);
+    }
+
+    protected void unsetCDSConfigService(CDSConfigService cdsConfigService) {
+
+        AuthListenerServiceDataHolder.setCDSConfigService(null);
     }
 }

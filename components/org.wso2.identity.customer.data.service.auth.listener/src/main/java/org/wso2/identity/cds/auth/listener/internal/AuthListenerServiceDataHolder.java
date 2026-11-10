@@ -20,6 +20,7 @@ package org.wso2.identity.cds.auth.listener.internal;
 
 import org.wso2.carbon.identity.organization.management.service.OrganizationManager;
 import org.wso2.carbon.user.core.service.RealmService;
+import org.wso2.identity.cds.config.mgt.CDSConfigService;
 
 /**
  * This class holds the services required for tenant association management services.
@@ -28,6 +29,7 @@ public class AuthListenerServiceDataHolder {
 
     private static RealmService realmService;
     private static OrganizationManager organizationManager;
+    private static CDSConfigService cdsConfigService;
 
     private AuthListenerServiceDataHolder() {
 
@@ -64,5 +66,15 @@ public class AuthListenerServiceDataHolder {
     public static void setOrgSchemaSyncManager(OrganizationManager organizationManager) {
 
         AuthListenerServiceDataHolder.organizationManager = organizationManager;
+    }
+
+    public static CDSConfigService getCDSConfigService() {
+
+        return cdsConfigService;
+    }
+
+    public static void setCDSConfigService(CDSConfigService cdsConfigService) {
+
+        AuthListenerServiceDataHolder.cdsConfigService = cdsConfigService;
     }
 }
