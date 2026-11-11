@@ -91,7 +91,8 @@
                         </Private-Package>
                         <Export-Package>
                             !org.wso2.identity.cds.client.internal,
-                            org.wso2.identity.cds.client;version="${project.version}"
+                            org.wso2.identity.cds.client;version="${project.version}",
+                            org.wso2.identity.cds.client.exception;version="${project.version}"
                         </Export-Package>
                         <Import-Package>
                             org.apache.commons.logging,

@@ -55,6 +55,7 @@
                             org.wso2.identity.cds.auth.listener.*
                         </Export-Package>
                         <Import-Package>
+                            org.wso2.identity.cds.config.mgt.*;version="${project.version}",
                             org.osgi.framework;version="${osgi.framework.imp.pkg.version.range}",
                             org.osgi.service.component;version="${osgi.service.component.imp.pkg.version.range}",
                             org.apache.commons.logging;version="${commons-logging.osgi.version.range}",
@@ -105,6 +106,10 @@
         <dependency>
             <groupId>org.wso2.identity.customer.data.service</groupId>
             <artifactId>org.wso2.identity.customer.data.service.client</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.wso2.identity.customer.data.service</groupId>
+            <artifactId>org.wso2.identity.customer.data.service.config.mgt</artifactId>
         </dependency>
     </dependencies>
 </project>

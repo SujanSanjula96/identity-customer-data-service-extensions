@@ -25,4 +25,8 @@
         <Class name="org.wso2.identity.cds.client.internal.CDSClientDataHolder"/>
         <Bug pattern="EI_EXPOSE_REP2,EI_EXPOSE_REP,MS_EXPOSE_REP,SING_SINGLETON_GETTER_NOT_SYNCHRONIZED"/>
     </Match>
+    <Match>
+        <Class name="org.wso2.identity.cds.config.mgt.internal.CDSConfigMgtDataHolder"/>
+        <Bug pattern="EI_EXPOSE_REP2,EI_EXPOSE_REP,MS_EXPOSE_REP,SING_SINGLETON_GETTER_NOT_SYNCHRONIZED"/>
+    </Match>
 </FindBugsFilter>

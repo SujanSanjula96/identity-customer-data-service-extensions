@@ -24,7 +24,11 @@ import org.osgi.service.component.ComponentContext;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Deactivate;
+import org.osgi.service.component.annotations.Reference;
+import org.osgi.service.component.annotations.ReferenceCardinality;
+import org.osgi.service.component.annotations.ReferencePolicy;
 import org.wso2.carbon.identity.event.handler.AbstractEventHandler;
+import org.wso2.identity.cds.config.mgt.CDSConfigService;
 import org.wso2.identity.cds.event.handler.ClaimEventHandler;
 import org.wso2.identity.cds.event.handler.IdentityEventHandler;
 import org.wso2.identity.cds.event.handler.OrganizationEventHandler;
@@ -55,5 +59,21 @@ public class IdentifyEventHandlerComponent {
         if (log.isDebugEnabled()) {
             log.debug("CDS EventHandlers deactivated.");
         }
+    }
+
+    @Reference(
+            name = "cds.config.service",
+            service = CDSConfigService.class,
+            cardinality = ReferenceCardinality.MANDATORY,
+            policy = ReferencePolicy.DYNAMIC,
+            unbind = "unsetCDSConfigService")
+    protected void setCDSConfigService(CDSConfigService cdsConfigService) {
+
+        EventHandlerDataHolder.setCDSConfigService(cdsConfigService);
+    }
+
+    protected void unsetCDSConfigService(CDSConfigService cdsConfigService) {
+
+        EventHandlerDataHolder.setCDSConfigService(null);
     }
 }

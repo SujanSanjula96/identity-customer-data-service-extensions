@@ -24,8 +24,12 @@ import org.osgi.service.component.ComponentContext;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Deactivate;
+import org.osgi.service.component.annotations.Reference;
+import org.osgi.service.component.annotations.ReferenceCardinality;
+import org.osgi.service.component.annotations.ReferencePolicy;
 import org.wso2.carbon.identity.application.authentication.framework.handler.request.PostAuthenticationHandler;
 import org.wso2.identity.cds.auth.handler.CDSPostAuthnHandler;
+import org.wso2.identity.cds.config.mgt.CDSConfigService;
 
 /**
  * OSGi component for CDS Post Authentication Handler.
@@ -50,5 +54,21 @@ public class CDSPostAuthHandlerComponent {
         if (log.isDebugEnabled()) {
             log.debug("CDS Post Authentication handler is deactivated");
         }
+    }
+
+    @Reference(
+            name = "cds.config.service",
+            service = CDSConfigService.class,
+            cardinality = ReferenceCardinality.MANDATORY,
+            policy = ReferencePolicy.DYNAMIC,
+            unbind = "unsetCDSConfigService")
+    protected void setCDSConfigService(CDSConfigService cdsConfigService) {
+
+        CDSPostAuthHandlerDataHolder.setCDSConfigService(cdsConfigService);
+    }
+
+    protected void unsetCDSConfigService(CDSConfigService cdsConfigService) {
+
+        CDSPostAuthHandlerDataHolder.setCDSConfigService(null);
     }
 }
