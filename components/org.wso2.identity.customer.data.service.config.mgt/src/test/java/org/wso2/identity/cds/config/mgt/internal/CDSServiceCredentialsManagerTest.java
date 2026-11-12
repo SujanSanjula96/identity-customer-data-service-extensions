@@ -26,14 +26,11 @@ import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 import org.wso2.carbon.context.PrivilegedCarbonContext;
-import org.wso2.carbon.identity.api.resource.mgt.APIResourceManager;
 import org.wso2.carbon.identity.application.common.IdentityApplicationManagementException;
-import org.wso2.carbon.identity.application.common.model.APIResource;
 import org.wso2.carbon.identity.application.common.model.ApplicationBasicInfo;
 import org.wso2.carbon.identity.application.common.model.AuthorizedAPI;
 import org.wso2.carbon.identity.application.common.model.InboundAuthenticationConfig;
 import org.wso2.carbon.identity.application.common.model.InboundAuthenticationRequestConfig;
-import org.wso2.carbon.identity.application.common.model.Scope;
 import org.wso2.carbon.identity.application.common.model.ServiceProvider;
 import org.wso2.carbon.identity.application.common.model.ServiceProviderProperty;
 import org.wso2.carbon.identity.application.common.util.IdentityApplicationManagementUtil;
@@ -55,7 +52,6 @@ import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -63,7 +59,6 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.testng.Assert.assertEquals;
@@ -88,10 +83,8 @@ public class CDSServiceCredentialsManagerTest {
     private MockedStatic<CDSClient> cdsClient;
     private ApplicationManagementService applicationManagementService;
     private AuthorizedAPIManagementService authorizedAPIManagementService;
-    private APIResourceManager apiResourceManager;
     private OAuthAdminServiceImpl oAuthAdminService;
     private OrgApplicationManager orgApplicationManager;
-    private List<AuthorizedAPI> authorizedAPIs;
 
     @BeforeClass
     public void setUpCarbonHome() throws Exception {
@@ -105,7 +98,6 @@ public class CDSServiceCredentialsManagerTest {
 
         applicationManagementService = mock(ApplicationManagementService.class);
         authorizedAPIManagementService = mock(AuthorizedAPIManagementService.class);
-        apiResourceManager = mock(APIResourceManager.class);
         oAuthAdminService = mock(OAuthAdminServiceImpl.class);
         orgApplicationManager = mock(OrgApplicationManager.class);
         OrganizationManager organizationManager = mock(OrganizationManager.class);
@@ -117,7 +109,6 @@ public class CDSServiceCredentialsManagerTest {
                 .thenReturn(applicationManagementService);
         when(carbonContext.getOSGiService(AuthorizedAPIManagementService.class, null))
                 .thenReturn(authorizedAPIManagementService);
-        when(carbonContext.getOSGiService(APIResourceManager.class, null)).thenReturn(apiResourceManager);
         when(carbonContext.getOSGiService(OAuthAdminServiceImpl.class, null)).thenReturn(oAuthAdminService);
         when(carbonContext.getOSGiService(OrgApplicationManager.class, null)).thenReturn(orgApplicationManager);
         when(carbonContext.getOSGiService(OrganizationManager.class, null)).thenReturn(organizationManager);
@@ -129,21 +120,8 @@ public class CDSServiceCredentialsManagerTest {
 
         // CDS takes the credentials unless a test stubs otherwise.
         cdsClient = mockStatic(CDSClient.class);
-        cdsClient.when(() -> CDSClient.syncServiceCredentials(anyString(), anyString(), anyString())).thenReturn(true);
-
-        // Every management API exists, with the scopes CDS asks for and one it does not.
-        for (Map.Entry<String, List<String>> api : CDSServiceCredentialsManager.MANAGEMENT_API_SCOPES.entrySet()) {
-            List<Scope> scopes = new ArrayList<>();
-            for (String scope : api.getValue()) {
-                scopes.add(scope(scope));
-            }
-            scopes.add(scope("internal_unrelated_scope"));
-            APIResource resource = new APIResource.APIResourceBuilder().id("id:" + api.getKey())
-                    .identifier(api.getKey()).scopes(scopes).build();
-            when(apiResourceManager.getAPIResourceByIdentifier(api.getKey(), TENANT)).thenReturn(resource);
-        }
-        authorizedAPIs = new ArrayList<>();
-        when(authorizedAPIManagementService.getAuthorizedAPIs(RESOURCE_ID, TENANT)).thenReturn(authorizedAPIs);
+        cdsClient.when(() -> CDSClient.syncServiceCredentials(anyString(), anyString(), anyString(),
+                anyString())).thenReturn(true);
 
         OAuthConsumerAppDTO renewed = new OAuthConsumerAppDTO();
         renewed.setOauthConsumerSecret(RENEWED_SECRET);
@@ -156,11 +134,6 @@ public class CDSServiceCredentialsManagerTest {
         cdsClient.close();
         identityTenantUtil.close();
         carbonContextStatic.close();
-    }
-
-    private static Scope scope(String name) {
-
-        return new Scope.ScopeBuilder().name(name).build();
     }
 
     private static ServiceProvider applicationWithClient() {
@@ -201,11 +174,11 @@ public class CDSServiceCredentialsManagerTest {
     }
 
     @Test
-    public void testCreatesAnAuthorizedApplicationAndSendsItsCredentials() throws Exception {
+    public void testCreatesTheApplicationAndSendsItsCredentials() throws Exception {
 
         applicationIsCreated();
 
-        new CDSServiceCredentialsManager().ensureServiceCredentials(TENANT, false);
+        new CDSServiceCredentialsManager().ensureServiceCredentials(TENANT);
 
         ArgumentCaptor<ApplicationDTO> created = ArgumentCaptor.forClass(ApplicationDTO.class);
         verify(applicationManagementService).createApplication(created.capture(), eq(TENANT), eq(USER));
@@ -220,55 +193,24 @@ public class CDSServiceCredentialsManagerTest {
         verify(applicationManagementService, never()).updateApplication(any(ServiceProvider.class), anyString(),
                 anyString());
 
-        ArgumentCaptor<AuthorizedAPI> authorized = ArgumentCaptor.forClass(AuthorizedAPI.class);
-        verify(authorizedAPIManagementService, times(CDSServiceCredentialsManager.MANAGEMENT_API_SCOPES.size()))
-                .addAuthorizedAPI(eq(RESOURCE_ID), authorized.capture(), eq(TENANT));
-        for (AuthorizedAPI api : authorized.getAllValues()) {
-            assertEquals(api.getPolicyId(), "RBAC");
-            for (Scope scope : api.getScopes()) {
-                assertTrue(!"internal_unrelated_scope".equals(scope.getName()), "An unrequested scope is granted.");
-            }
-        }
+        verify(authorizedAPIManagementService, never()).addAuthorizedAPI(anyString(), any(AuthorizedAPI.class),
+                anyString());
 
-        cdsClient.verify(() -> CDSClient.syncServiceCredentials(TENANT, CLIENT_ID, RENEWED_SECRET));
+        cdsClient.verify(() -> CDSClient.syncServiceCredentials(TENANT, ORGANIZATION_ID, CLIENT_ID, RENEWED_SECRET));
     }
 
+    // CDS may have lost the credentials it held, so each enable renews the secret and sends it.
     @Test
-    public void testLeavesCDSAloneWhenTheApplicationExists() throws Exception {
+    public void testRenewsAndSendsTheSecretOfAnExistingApplication() throws Exception {
 
         applicationExists();
 
-        new CDSServiceCredentialsManager().ensureServiceCredentials(TENANT, false);
+        new CDSServiceCredentialsManager().ensureServiceCredentials(TENANT);
 
         verify(applicationManagementService, never()).createApplication(any(ApplicationDTO.class), anyString(),
                 anyString());
-        verify(oAuthAdminService, never()).updateAndRetrieveOauthSecretKey(anyString());
-        cdsClient.verify(() -> CDSClient.syncServiceCredentials(anyString(), anyString(), anyString()), never());
-    }
-
-    @Test
-    public void testRenewsTheSecretWhenAskedTo() throws Exception {
-
-        applicationExists();
-
-        new CDSServiceCredentialsManager().ensureServiceCredentials(TENANT, true);
-
         verify(oAuthAdminService).updateAndRetrieveOauthSecretKey(CLIENT_ID);
-        cdsClient.verify(() -> CDSClient.syncServiceCredentials(TENANT, CLIENT_ID, RENEWED_SECRET));
-    }
-
-    @Test
-    public void testAuthorizesOnlyTheAPIsTheApplicationLacks() throws Exception {
-
-        applicationExists();
-        AuthorizedAPI present = new AuthorizedAPI();
-        present.setAPIId("id:/api/server/v1/applications");
-        authorizedAPIs.add(present);
-
-        new CDSServiceCredentialsManager().ensureServiceCredentials(TENANT, false);
-
-        verify(authorizedAPIManagementService, times(CDSServiceCredentialsManager.MANAGEMENT_API_SCOPES.size() - 1))
-                .addAuthorizedAPI(eq(RESOURCE_ID), any(AuthorizedAPI.class), eq(TENANT));
+        cdsClient.verify(() -> CDSClient.syncServiceCredentials(TENANT, ORGANIZATION_ID, CLIENT_ID, RENEWED_SECRET));
     }
 
     @Test
@@ -278,12 +220,13 @@ public class CDSServiceCredentialsManagerTest {
                 .thenThrow(new IdentityApplicationManagementException("creation failed"));
 
         try {
-            new CDSServiceCredentialsManager().ensureServiceCredentials(TENANT, false);
+            new CDSServiceCredentialsManager().ensureServiceCredentials(TENANT);
             fail("Expected a CDSConfigMgtServerException.");
         } catch (CDSConfigMgtServerException e) {
             assertNotNull(e.getErrorCode());
         }
-        cdsClient.verify(() -> CDSClient.syncServiceCredentials(anyString(), anyString(), anyString()), never());
+        cdsClient.verify(() -> CDSClient.syncServiceCredentials(anyString(), anyString(), anyString(),
+                anyString()), never());
     }
 
     // A CDS without an encryption key uses its configured client. The application stays for a later enable.
@@ -291,10 +234,10 @@ public class CDSServiceCredentialsManagerTest {
     public void testKeepsTheApplicationWhenCDSStoresNoServiceCredentials() throws Exception {
 
         applicationIsCreated();
-        cdsClient.when(() -> CDSClient.syncServiceCredentials(anyString(), anyString(), anyString()))
+        cdsClient.when(() -> CDSClient.syncServiceCredentials(anyString(), anyString(), anyString(), anyString()))
                 .thenReturn(false);
 
-        new CDSServiceCredentialsManager().ensureServiceCredentials(TENANT, true);
+        new CDSServiceCredentialsManager().ensureServiceCredentials(TENANT);
 
         verifyNeverDeleted();
     }
@@ -303,12 +246,12 @@ public class CDSServiceCredentialsManagerTest {
     public void testFailsWithoutTheSecretWhenCDSRejectsTheCredentials() throws Exception {
 
         applicationIsCreated();
-        cdsClient.when(() -> CDSClient.syncServiceCredentials(anyString(), anyString(), anyString()))
+        cdsClient.when(() -> CDSClient.syncServiceCredentials(anyString(), anyString(), anyString(), anyString()))
                 .thenThrow(new CDSClientException("rejected", "The token endpoint refused the client.",
                         "CDS-16003"));
 
         try {
-            new CDSServiceCredentialsManager().ensureServiceCredentials(TENANT, false);
+            new CDSServiceCredentialsManager().ensureServiceCredentials(TENANT);
             fail("Expected a CDSConfigMgtServerException.");
         } catch (CDSConfigMgtServerException e) {
             assertTrue(e.getDescription().contains("refused"));
@@ -334,7 +277,7 @@ public class CDSServiceCredentialsManagerTest {
         }).when(orgApplicationManager).shareOrganizationApplication(anyString(), anyString(),
                 org.mockito.ArgumentMatchers.anyBoolean(), any());
 
-        new CDSServiceCredentialsManager().ensureServiceCredentials(TENANT, false);
+        new CDSServiceCredentialsManager().ensureServiceCredentials(TENANT);
 
         verify(orgApplicationManager).shareOrganizationApplication(ORGANIZATION_ID, RESOURCE_ID, true,
                 Collections.emptyList());
@@ -360,11 +303,11 @@ public class CDSServiceCredentialsManagerTest {
         application.setSpProperties(new ServiceProviderProperty[]{shared});
         when(applicationManagementService.getApplicationByResourceId(RESOURCE_ID, TENANT)).thenReturn(application);
 
-        new CDSServiceCredentialsManager().ensureServiceCredentials(TENANT, true);
+        new CDSServiceCredentialsManager().ensureServiceCredentials(TENANT);
 
         verify(orgApplicationManager, never()).shareOrganizationApplication(anyString(), anyString(),
                 org.mockito.ArgumentMatchers.anyBoolean(), any());
-        cdsClient.verify(() -> CDSClient.syncServiceCredentials(TENANT, CLIENT_ID, RENEWED_SECRET));
+        cdsClient.verify(() -> CDSClient.syncServiceCredentials(TENANT, ORGANIZATION_ID, CLIENT_ID, RENEWED_SECRET));
     }
 
     @Test
@@ -376,14 +319,15 @@ public class CDSServiceCredentialsManagerTest {
                         org.mockito.ArgumentMatchers.anyBoolean(), any());
 
         try {
-            new CDSServiceCredentialsManager().ensureServiceCredentials(TENANT, false);
+            new CDSServiceCredentialsManager().ensureServiceCredentials(TENANT);
             fail("Expected a CDSConfigMgtServerException.");
         } catch (CDSConfigMgtServerException e) {
             assertNotNull(e.getErrorCode());
         }
         assertTrue(!IdentityApplicationManagementUtil.getAllowUpdateSystemApplicationThreadLocal(),
                 "Updating reserved applications is still allowed after a failed share.");
-        cdsClient.verify(() -> CDSClient.syncServiceCredentials(anyString(), anyString(), anyString()), never());
+        cdsClient.verify(() -> CDSClient.syncServiceCredentials(anyString(), anyString(), anyString(),
+                anyString()), never());
     }
 
     @Test

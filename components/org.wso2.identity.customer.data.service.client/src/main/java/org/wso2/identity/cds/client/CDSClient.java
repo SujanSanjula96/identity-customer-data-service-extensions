@@ -58,6 +58,7 @@ public class CDSClient {
     // Service credentials are synced on the root organization only.
     private static final String SERVICE_CREDENTIALS_SYNC_API = "%s/t/%s/cds/api/v1/service-credentials/sync";
     private static final String SERVICE_CREDENTIALS_UPDATED = "SERVICE_CREDENTIALS_UPDATED";
+    private static final String ORG_ID = "org_id";
     private static final String CLIENT_ID = "client_id";
     private static final String CLIENT_SECRET = "client_secret";
     private static final String CONTENT_TYPE = "Content-Type";
@@ -261,6 +262,7 @@ public class CDSClient {
      * POST /service-credentials/sync. CDS gets a token with the credentials before it stores them.
      *
      * @param tenant       Tenant domain of a root organization.
+     * @param orgId        Organization ID of the tenant, which CDS keys the credentials by.
      * @param clientId     Client ID of the application.
      * @param clientSecret Client secret of the application.
      * @return false if CDS does not store service credentials: it has no encryption key (CDS-16004), or it is a CDS
@@ -268,7 +270,7 @@ public class CDSClient {
      * @throws CDSException CDSClientException if CDS refuses the credentials. CDSServerException if CDS is not
      *                      configured, cannot be reached, or fails.
      */
-    public static boolean syncServiceCredentials(String tenant, String clientId, String clientSecret)
+    public static boolean syncServiceCredentials(String tenant, String orgId, String clientId, String clientSecret)
             throws CDSException {
 
         String serviceURL = Utils.getCDSServiceURL();
@@ -280,6 +282,7 @@ public class CDSClient {
 
         Map<String, String> event = new HashMap<>();
         event.put(EVENT, SERVICE_CREDENTIALS_UPDATED);
+        event.put(ORG_ID, orgId);
         event.put(CLIENT_ID, clientId);
         event.put(CLIENT_SECRET, clientSecret);
 

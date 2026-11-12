@@ -94,10 +94,11 @@ public class CDSClientServiceCredentialsTest {
     public void testSyncSendsTheCredentials() throws CDSException {
 
         respond(204, "");
-        assertTrue(CDSClient.syncServiceCredentials(TENANT, "acme-client", "acme-secret"));
+        assertTrue(CDSClient.syncServiceCredentials(TENANT, "acme-org-id", "acme-client", "acme-secret"));
         assertEquals(requestMethod, "POST");
         assertEquals(requestAuthorization, "Basic " + CREDENTIALS);
         assertTrue(requestBody.contains("\"event\":\"SERVICE_CREDENTIALS_UPDATED\""));
+        assertTrue(requestBody.contains("\"org_id\":\"acme-org-id\""));
         assertTrue(requestBody.contains("\"client_id\":\"acme-client\""));
         assertTrue(requestBody.contains("\"client_secret\":\"acme-secret\""));
     }
@@ -106,7 +107,7 @@ public class CDSClientServiceCredentialsTest {
     public void testSyncTellsThatCDSStoresNoServiceCredentials() throws CDSException {
 
         respond(400, "{\"code\":\"CDS-16004\",\"message\":\"m\",\"description\":\"d\"}");
-        assertFalse(CDSClient.syncServiceCredentials(TENANT, "acme-client", "acme-secret"));
+        assertFalse(CDSClient.syncServiceCredentials(TENANT, "acme-org-id", "acme-client", "acme-secret"));
     }
 
     // A CDS from before the endpoint uses its configured client, so enabling CDS must not fail on it.
@@ -114,7 +115,7 @@ public class CDSClientServiceCredentialsTest {
     public void testSyncTellsThatACDSWithoutTheEndpointStoresNoServiceCredentials() throws CDSException {
 
         respond(404, "");
-        assertFalse(CDSClient.syncServiceCredentials(TENANT, "acme-client", "acme-secret"));
+        assertFalse(CDSClient.syncServiceCredentials(TENANT, "acme-org-id", "acme-client", "acme-secret"));
     }
 
     @Test
@@ -122,7 +123,7 @@ public class CDSClientServiceCredentialsTest {
 
         respond(400, "{\"code\":\"CDS-16003\",\"message\":\"m\",\"description\":\"refused\"}");
         try {
-            CDSClient.syncServiceCredentials(TENANT, "acme-client", "wrong-secret");
+            CDSClient.syncServiceCredentials(TENANT, "acme-org-id", "acme-client", "wrong-secret");
             fail("Expected a CDSClientException.");
         } catch (CDSClientException e) {
             assertEquals(e.getErrorCode(), "CDS-16003");
@@ -138,7 +139,7 @@ public class CDSClientServiceCredentialsTest {
 
         utils.when(Utils::getCDSServiceURL).thenReturn(null);
         try {
-            CDSClient.syncServiceCredentials(TENANT, "acme-client", "acme-secret");
+            CDSClient.syncServiceCredentials(TENANT, "acme-org-id", "acme-client", "acme-secret");
             fail("Expected a CDSServerException.");
         } catch (CDSServerException e) {
             assertTrue(e.getMessage().contains("not configured"));

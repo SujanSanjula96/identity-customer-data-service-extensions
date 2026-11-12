@@ -97,9 +97,9 @@ public class CDSConfigServiceImpl implements CDSConfigService {
         }
         if (cdsConfig.isEnabled()) {
             // CDS needs the credentials of the tenant before it is enabled: enabling syncs the profile schema from
-            // the Identity Server. They are renewed and sent again each time the tenant turns CDS on, so that turning
-            // CDS off and on recovers from credentials that no longer work.
-            serviceCredentialsManager.ensureServiceCredentials(tenantDomain, !isTenantCDSEnabled(tenantDomain));
+            // the Identity Server. They are renewed and sent again each time, so that enabling CDS again recovers
+            // from credentials that no longer work.
+            serviceCredentialsManager.ensureServiceCredentials(tenantDomain);
         }
         // CDS gets the configuration first. If CDS does not accept it, the configuration is not stored.
         try {
@@ -132,16 +132,7 @@ public class CDSConfigServiceImpl implements CDSConfigService {
         return tenantDomain;
     }
 
-    private boolean isTenantCDSEnabled(String tenantDomain) throws CDSConfigMgtServerException {
-
-        try {
-            return getTenantCDSEnabled(tenantDomain).orElse(false);
-        } catch (ConfigurationManagementException e) {
-            throw serverException(ERROR_CODE_CDS_CONFIG_RETRIEVE, e, Utils.sanitizeForLog(tenantDomain));
-        }
-    }
-
-        private Optional<Boolean> getTenantCDSEnabled(String tenantDomain) throws ConfigurationManagementException {
+    private Optional<Boolean> getTenantCDSEnabled(String tenantDomain) throws ConfigurationManagementException {
 
         ConfigurationManager configurationManager = CDSConfigMgtDataHolder.getInstance().getConfigurationManager();
         Resource resource;

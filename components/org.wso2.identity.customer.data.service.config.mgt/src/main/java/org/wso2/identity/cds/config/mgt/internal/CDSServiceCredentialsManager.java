@@ -22,18 +22,12 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.wso2.carbon.context.PrivilegedCarbonContext;
-import org.wso2.carbon.identity.api.resource.mgt.APIResourceManager;
-import org.wso2.carbon.identity.api.resource.mgt.APIResourceMgtException;
 import org.wso2.carbon.identity.application.common.IdentityApplicationManagementException;
-import org.wso2.carbon.identity.application.common.model.APIResource;
 import org.wso2.carbon.identity.application.common.model.ApplicationBasicInfo;
-import org.wso2.carbon.identity.application.common.model.AuthorizedAPI;
 import org.wso2.carbon.identity.application.common.model.InboundAuthenticationRequestConfig;
-import org.wso2.carbon.identity.application.common.model.Scope;
 import org.wso2.carbon.identity.application.common.model.ServiceProvider;
 import org.wso2.carbon.identity.application.common.model.ServiceProviderProperty;
 import org.wso2.carbon.identity.application.mgt.ApplicationManagementService;
-import org.wso2.carbon.identity.application.mgt.AuthorizedAPIManagementService;
 import org.wso2.carbon.identity.application.mgt.inbound.dto.ApplicationDTO;
 import org.wso2.carbon.identity.application.mgt.inbound.dto.InboundProtocolsDTO;
 import org.wso2.carbon.identity.core.util.IdentityTenantUtil;
@@ -49,14 +43,9 @@ import org.wso2.identity.cds.client.Utils;
 import org.wso2.identity.cds.client.exception.CDSException;
 import org.wso2.identity.cds.config.mgt.exception.CDSConfigMgtServerException;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.locks.ReentrantLock;
@@ -69,7 +58,8 @@ import static org.wso2.identity.cds.config.mgt.constant.CDSConfigMgtConstants.Er
  * its credentials with POST /service-credentials/sync.
  *
  * CDS never creates the application and never holds Identity Server administrator credentials. The application is
- * created here, inside the Identity Server, and authorized for the management APIs CDS calls and nothing else.
+ * created here, inside the Identity Server. CDSAuthorizedAPIListener authorizes it for the management APIs CDS calls
+ * and nothing else, without storing the authorization.
  *
  * The application is shared with every sub organization of the tenant, existing and future, so that CDS gets a
  * token in a sub organization with the same credentials, at the token endpoint of that sub organization.
@@ -89,31 +79,10 @@ public class CDSServiceCredentialsManager {
     private static final String OAUTH2 = "oauth2";
     private static final String OAUTH_VERSION = "OAuth-2.0";
     private static final String CLIENT_CREDENTIALS = "client_credentials";
-    private static final String RBAC = "RBAC";
     // The application properties that the Identity Server sets on a shared application: isAppShared from IS 7.1,
     // shareWithAllChildren before it. Nobody else can share the reserved application, so either means it is shared
     // with all sub organizations.
     private static final List<String> SHARED_PROPERTIES = Arrays.asList("isAppShared", "shareWithAllChildren");
-
-    /**
-     * The management APIs CDS asks a token for, with the scopes it asks for. They have to match the scope of
-     * FetchToken in CDS. The /o APIs are those of a sub organization, which a token of the shared application
-     * reaches.
-     */
-    static final Map<String, List<String>> MANAGEMENT_API_SCOPES;
-
-    static {
-        Map<String, List<String>> scopes = new LinkedHashMap<>();
-        scopes.put("/api/server/v1/applications", Collections.singletonList("internal_application_mgt_view"));
-        scopes.put("/api/server/v1/claim-dialects", Collections.singletonList("internal_claim_meta_view"));
-        scopes.put("/scim2/Users", Arrays.asList("internal_user_mgt_list", "internal_user_mgt_view"));
-        scopes.put("/api/server/v1/organizations", Collections.singletonList("internal_organization_view"));
-        scopes.put("/o/api/server/v1/applications", Collections.singletonList("internal_org_application_mgt_view"));
-        scopes.put("/o/api/server/v1/claim-dialects", Collections.singletonList("internal_org_claim_meta_view"));
-        scopes.put("/o/scim2/Users", Arrays.asList("internal_org_user_mgt_list", "internal_org_user_mgt_view"));
-        scopes.put("/o/api/server/v1/organizations", Collections.singletonList("internal_org_organization_view"));
-        MANAGEMENT_API_SCOPES = Collections.unmodifiableMap(scopes);
-    }
 
     // One set-up at a time per tenant, so that two enables do not both create the application, or renew the secret
     // the other one is sending.
@@ -121,29 +90,29 @@ public class CDSServiceCredentialsManager {
 
     /**
      * Make sure CDS holds working credentials for the application of a tenant. The application is created if the
-     * tenant has none, and authorized for any management API it is not authorized for. Its secret is renewed and
-     * sent to CDS if the application is new, or if renew is true, because the Identity Server gives a client secret
-     * only when it creates or renews it.
+     * tenant has none, and shared with its sub organizations. Its secret is renewed and sent to CDS with the org ID of
+     * the tenant each time, because the Identity Server gives a client secret only when it creates or renews it, and
+     * CDS may have lost the credentials it held, as after its database is restored. So enabling CDS again recovers
+     * from credentials that no longer work. CDSAuthorizedAPIListener authorizes the application for the management
+     * APIs CDS calls.
      *
      * If CDS stores no service credentials, it uses its configured client for every tenant, and nothing fails.
      *
      * @param tenantDomain Tenant domain of a root organization.
-     * @param renew        true to renew the secret of an existing application and send it, as when the tenant turns
-     *                     CDS on.
      * @throws CDSConfigMgtServerException If the application cannot be set up, or CDS does not take the credentials.
      */
-    public void ensureServiceCredentials(String tenantDomain, boolean renew) throws CDSConfigMgtServerException {
+    public void ensureServiceCredentials(String tenantDomain) throws CDSConfigMgtServerException {
 
         ReentrantLock lock = TENANT_LOCKS.computeIfAbsent(tenantDomain, tenant -> new ReentrantLock());
         lock.lock();
         try {
-            setUp(tenantDomain, renew);
+            setUp(tenantDomain);
         } finally {
             lock.unlock();
         }
     }
 
-    private void setUp(String tenantDomain, boolean renew) throws CDSConfigMgtServerException {
+    private void setUp(String tenantDomain) throws CDSConfigMgtServerException {
 
         String sanitizedTenant = Utils.sanitizeForLog(tenantDomain);
         String username = PrivilegedCarbonContext.getThreadLocalCarbonContext().getUsername();
@@ -160,8 +129,7 @@ public class CDSServiceCredentialsManager {
             ApplicationManagementService applicationManagementService = getApplicationManagementService();
             ApplicationBasicInfo existing =
                     applicationManagementService.getApplicationBasicInfoByName(APPLICATION_NAME, tenantDomain);
-            boolean created = existing == null;
-            String resourceId = created ? createApplication(tenantDomain, username) :
+            String resourceId = existing == null ? createApplication(tenantDomain, username) :
                     existing.getApplicationResourceId();
             ServiceProvider application = applicationManagementService.getApplicationByResourceId(resourceId,
                     tenantDomain);
@@ -170,25 +138,19 @@ public class CDSServiceCredentialsManager {
                 throw serverException(null, sanitizedTenant, "The application '" + APPLICATION_NAME +
                         "' has no OAuth client.");
             }
-            authorizeManagementAPIs(resourceId, tenantDomain);
-            shareWithSubOrganizations(application, resourceId, tenantDomain);
-            if (!created && !renew) {
-                if (log.isDebugEnabled()) {
-                    log.debug("CDS already has the service credentials of tenant: " + sanitizedTenant);
-                }
-                return;
-            }
+            String organizationId = getOrganizationManager().resolveOrganizationId(tenantDomain);
+            shareWithSubOrganizations(application, resourceId, organizationId, tenantDomain);
 
             String clientSecret = getOAuthAdminService().updateAndRetrieveOauthSecretKey(clientId)
                     .getOauthConsumerSecret();
-            if (CDSClient.syncServiceCredentials(tenantDomain, clientId, clientSecret)) {
+            if (CDSClient.syncServiceCredentials(tenantDomain, organizationId, clientId, clientSecret)) {
                 log.info("Sent the service credentials of tenant: " + sanitizedTenant + " to CDS.");
             } else if (log.isDebugEnabled()) {
                 log.debug("CDS stores no service credentials, so none are sent for tenant: " + sanitizedTenant);
             }
         } catch (CDSException e) {
             throw serverException(e, sanitizedTenant, e.getDescription());
-        } catch (IdentityApplicationManagementException | APIResourceMgtException | IdentityOAuthAdminException |
+        } catch (IdentityApplicationManagementException | IdentityOAuthAdminException |
                  OrganizationManagementException | UserStoreException e) {
             throw serverException(e, sanitizedTenant, e.getMessage());
         } finally {
@@ -228,8 +190,8 @@ public class CDSServiceCredentialsManager {
      * the application, which the reserved name makes read-only, so CDSApplicationShareListener allows those updates
      * for this call only.
      */
-    private void shareWithSubOrganizations(ServiceProvider application, String resourceId, String tenantDomain)
-            throws OrganizationManagementException {
+    private void shareWithSubOrganizations(ServiceProvider application, String resourceId, String organizationId,
+                                           String tenantDomain) throws OrganizationManagementException {
 
         if (application.getSpProperties() != null) {
             for (ServiceProviderProperty property : application.getSpProperties()) {
@@ -238,7 +200,6 @@ public class CDSServiceCredentialsManager {
                 }
             }
         }
-        String organizationId = getOrganizationManager().resolveOrganizationId(tenantDomain);
         try {
             CDSApplicationShareListener.startSharing();
             getOrgApplicationManager().shareOrganizationApplication(organizationId, resourceId, true,
@@ -248,39 +209,6 @@ public class CDSServiceCredentialsManager {
         }
         log.info("Shared the application '" + APPLICATION_NAME + "' of tenant: " +
                 Utils.sanitizeForLog(tenantDomain) + " with its sub organizations.");
-    }
-
-    // Authorize the application for each management API it is not authorized for.
-    private void authorizeManagementAPIs(String resourceId, String tenantDomain)
-            throws IdentityApplicationManagementException, APIResourceMgtException, CDSConfigMgtServerException {
-
-        AuthorizedAPIManagementService authorizedAPIManagementService = getAuthorizedAPIManagementService();
-        Set<String> authorized = new HashSet<>();
-        for (AuthorizedAPI api : authorizedAPIManagementService.getAuthorizedAPIs(resourceId, tenantDomain)) {
-            authorized.add(api.getAPIId());
-        }
-
-        for (Map.Entry<String, List<String>> api : MANAGEMENT_API_SCOPES.entrySet()) {
-            APIResource apiResource = getAPIResourceManager().getAPIResourceByIdentifier(api.getKey(), tenantDomain);
-            if (apiResource == null) {
-                throw serverException(null, Utils.sanitizeForLog(tenantDomain),
-                        "The Identity Server has no API resource " + api.getKey() + ".");
-            }
-            if (authorized.contains(apiResource.getId())) {
-                continue;
-            }
-            List<Scope> scopes = new ArrayList<>();
-            for (Scope scope : apiResource.getScopes()) {
-                if (api.getValue().contains(scope.getName())) {
-                    scopes.add(scope);
-                }
-            }
-            AuthorizedAPI authorizedAPI = new AuthorizedAPI();
-            authorizedAPI.setAPIId(apiResource.getId());
-            authorizedAPI.setPolicyId(RBAC);
-            authorizedAPI.setScopes(scopes);
-            authorizedAPIManagementService.addAuthorizedAPI(resourceId, authorizedAPI, tenantDomain);
-        }
     }
 
     private static String getOAuthClientId(ServiceProvider application) {
@@ -308,18 +236,6 @@ public class CDSServiceCredentialsManager {
 
         return (ApplicationManagementService) PrivilegedCarbonContext.getThreadLocalCarbonContext()
                 .getOSGiService(ApplicationManagementService.class, null);
-    }
-
-    private static AuthorizedAPIManagementService getAuthorizedAPIManagementService() {
-
-        return (AuthorizedAPIManagementService) PrivilegedCarbonContext.getThreadLocalCarbonContext()
-                .getOSGiService(AuthorizedAPIManagementService.class, null);
-    }
-
-    private static APIResourceManager getAPIResourceManager() {
-
-        return (APIResourceManager) PrivilegedCarbonContext.getThreadLocalCarbonContext()
-                .getOSGiService(APIResourceManager.class, null);
     }
 
     private static OrgApplicationManager getOrgApplicationManager() {
