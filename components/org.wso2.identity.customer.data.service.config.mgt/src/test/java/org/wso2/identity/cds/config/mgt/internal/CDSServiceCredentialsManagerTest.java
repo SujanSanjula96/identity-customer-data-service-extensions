@@ -50,7 +50,9 @@ import org.wso2.identity.cds.config.mgt.exception.CDSConfigMgtServerException;
 
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -97,6 +99,8 @@ public class CDSServiceCredentialsManagerTest {
     public void setUp() throws Exception {
 
         applicationManagementService = mock(ApplicationManagementService.class);
+        when(applicationManagementService.getSystemApplications())
+                .thenReturn(new HashSet<>(Arrays.asList("Console", CDSServiceCredentialsManager.APPLICATION_NAME)));
         authorizedAPIManagementService = mock(AuthorizedAPIManagementService.class);
         oAuthAdminService = mock(OAuthAdminServiceImpl.class);
         orgApplicationManager = mock(OrgApplicationManager.class);
@@ -211,6 +215,26 @@ public class CDSServiceCredentialsManagerTest {
                 anyString());
         verify(oAuthAdminService).updateAndRetrieveOauthSecretKey(CLIENT_ID);
         cdsClient.verify(() -> CDSClient.syncServiceCredentials(TENANT, ORGANIZATION_ID, CLIENT_ID, RENEWED_SECRET));
+    }
+
+    // The listener authorizes the application only under a reserved name, so an application created without one
+    // could not be used.
+    @Test
+    public void testFailsBeforeCreatingTheApplicationWhenTheNameIsNotReserved() throws Exception {
+
+        when(applicationManagementService.getSystemApplications()).thenReturn(Collections.singleton("Console"));
+
+        try {
+            new CDSServiceCredentialsManager().ensureServiceCredentials(TENANT);
+            fail("Expected a CDSConfigMgtServerException.");
+        } catch (CDSConfigMgtServerException e) {
+            assertTrue(e.getDescription().contains("read_only_apps"));
+        }
+        verify(applicationManagementService, never()).createApplication(any(ApplicationDTO.class), anyString(),
+                anyString());
+        verify(oAuthAdminService, never()).updateAndRetrieveOauthSecretKey(anyString());
+        cdsClient.verify(() -> CDSClient.syncServiceCredentials(anyString(), anyString(), anyString(),
+                anyString()), never());
     }
 
     @Test

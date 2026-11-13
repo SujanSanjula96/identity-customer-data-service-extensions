@@ -46,6 +46,7 @@ import org.wso2.identity.cds.config.mgt.exception.CDSConfigMgtServerException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.locks.ReentrantLock;
@@ -127,6 +128,10 @@ public class CDSServiceCredentialsManager {
             carbonContext.setUsername(username);
 
             ApplicationManagementService applicationManagementService = getApplicationManagementService();
+            if (!isReserved(applicationManagementService)) {
+                throw serverException(null, sanitizedTenant, "The application name '" + APPLICATION_NAME +
+                        "' is not reserved. Add it to [system_applications] read_only_apps in deployment.toml.");
+            }
             ApplicationBasicInfo existing =
                     applicationManagementService.getApplicationBasicInfoByName(APPLICATION_NAME, tenantDomain);
             String resourceId = existing == null ? createApplication(tenantDomain, username) :
@@ -180,8 +185,10 @@ public class CDSServiceCredentialsManager {
         String resourceId = getApplicationManagementService().createApplication(new ApplicationDTO.Builder()
                 .serviceProvider(serviceProvider).inboundProtocolConfigurationDto(inboundProtocols).build(),
                 tenantDomain, username);
-        log.info("Created the application '" + APPLICATION_NAME + "' of tenant: " +
-                Utils.sanitizeForLog(tenantDomain));
+        if (log.isDebugEnabled()) {
+            log.debug("Created the application '" + APPLICATION_NAME + "' of tenant: " +
+                    Utils.sanitizeForLog(tenantDomain));
+        }
         return resourceId;
     }
 
@@ -207,8 +214,33 @@ public class CDSServiceCredentialsManager {
         } finally {
             CDSApplicationShareListener.endSharing();
         }
-        log.info("Shared the application '" + APPLICATION_NAME + "' of tenant: " +
-                Utils.sanitizeForLog(tenantDomain) + " with its sub organizations.");
+        if (log.isDebugEnabled()) {
+            log.debug("Shared the application '" + APPLICATION_NAME + "' of tenant: " +
+                    Utils.sanitizeForLog(tenantDomain) + " with its sub organizations.");
+        }
+    }
+
+    /**
+     * Whether the deployment reserves the name of the application in [system_applications] read_only_apps. Only a
+     * reserved name keeps a tenant from creating or changing an application with that name, so the application of
+     * CDS is the one with that name only when the name is reserved. The Identity Server compares these names
+     * ignoring case.
+     *
+     * @param applicationManagementService Application management service.
+     * @return True if the name of the application of CDS is reserved.
+     */
+    static boolean isReserved(ApplicationManagementService applicationManagementService) {
+
+        Set<String> systemApplications = applicationManagementService.getSystemApplications();
+        if (systemApplications == null) {
+            return false;
+        }
+        for (String name : systemApplications) {
+            if (APPLICATION_NAME.equalsIgnoreCase(name)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String getOAuthClientId(ServiceProvider application) {

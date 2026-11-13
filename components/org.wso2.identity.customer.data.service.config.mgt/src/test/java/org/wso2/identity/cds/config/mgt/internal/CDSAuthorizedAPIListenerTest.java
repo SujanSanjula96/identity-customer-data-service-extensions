@@ -35,6 +35,7 @@ import org.wso2.carbon.identity.application.mgt.ApplicationManagementService;
 
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
@@ -60,6 +61,7 @@ public class CDSAuthorizedAPIListenerTest {
     private static final String OTHER_APP = "other-app-id";
 
     private MockedStatic<PrivilegedCarbonContext> carbonContextStatic;
+    private ApplicationManagementService applicationManagementService;
     private APIResourceManager apiResourceManager;
     private CDSAuthorizedAPIListener listener;
 
@@ -73,7 +75,10 @@ public class CDSAuthorizedAPIListenerTest {
     @BeforeMethod
     public void setUp() throws Exception {
 
-        ApplicationManagementService applicationManagementService = mock(ApplicationManagementService.class);
+        applicationManagementService = mock(ApplicationManagementService.class);
+        // The deployment reserves the name. The Identity Server compares these names ignoring case.
+        when(applicationManagementService.getSystemApplications())
+                .thenReturn(new HashSet<>(Arrays.asList("Console", "customer data service")));
         when(applicationManagementService.getApplicationBasicInfoByResourceId(CDS_APP, TENANT))
                 .thenReturn(application(CDSServiceCredentialsManager.APPLICATION_NAME));
         when(applicationManagementService.getApplicationBasicInfoByResourceId(OTHER_APP, TENANT))
@@ -171,6 +176,23 @@ public class CDSAuthorizedAPIListenerTest {
         assertTrue(authorizedAPIs.isEmpty());
         listener.preAddAuthorizedAPI(OTHER_APP, new AuthorizedAPI(), TENANT);
         listener.preDeleteAuthorizedAPI(OTHER_APP, "an-api", TENANT);
+    }
+
+    // Without the reserved name, a tenant could create an application with the name of the application of CDS.
+    @Test
+    public void testLeavesAnApplicationWithTheNameAloneWhenTheNameIsNotReserved() throws Exception {
+
+        when(applicationManagementService.getSystemApplications()).thenReturn(Collections.singleton("Console"));
+
+        List<AuthorizedScopes> authorizedScopes = new ArrayList<>();
+        listener.postGetAuthorizedScopes(authorizedScopes, CDS_APP, TENANT);
+        List<AuthorizedAPI> authorizedAPIs = new ArrayList<>();
+        listener.postGetAuthorizedAPIs(authorizedAPIs, CDS_APP, TENANT);
+
+        assertTrue(authorizedScopes.isEmpty());
+        assertTrue(authorizedAPIs.isEmpty());
+        assertNull(listener.postGetAuthorizedAPI(null, CDS_APP, "id:/api/server/v1/claim-dialects", TENANT));
+        listener.preAddAuthorizedAPI(CDS_APP, new AuthorizedAPI(), TENANT);
     }
 
     @Test

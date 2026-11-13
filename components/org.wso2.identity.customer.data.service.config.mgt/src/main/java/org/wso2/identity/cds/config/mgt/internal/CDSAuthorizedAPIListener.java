@@ -171,13 +171,19 @@ public class CDSAuthorizedAPIListener extends AbstractAuthorizedAPIManagementLis
         }
     }
 
+    /*
+     * The application of CDS is the one with its name, and only while the deployment reserves that name. Otherwise
+     * a tenant could create an application with the name and get these APIs.
+     */
     private static boolean isApplicationOfCDS(String appId, String tenantDomain)
             throws IdentityApplicationManagementException {
 
+        ApplicationManagementService applicationManagementService = getApplicationManagementService();
         ApplicationBasicInfo application =
-                getApplicationManagementService().getApplicationBasicInfoByResourceId(appId, tenantDomain);
+                applicationManagementService.getApplicationBasicInfoByResourceId(appId, tenantDomain);
         return application != null &&
-                CDSServiceCredentialsManager.APPLICATION_NAME.equals(application.getApplicationName());
+                CDSServiceCredentialsManager.APPLICATION_NAME.equals(application.getApplicationName()) &&
+                CDSServiceCredentialsManager.isReserved(applicationManagementService);
     }
 
     private static APIResource getAPIResource(String identifier, String tenantDomain)
