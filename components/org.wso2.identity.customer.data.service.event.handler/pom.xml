@@ -23,7 +23,7 @@
     <parent>
         <groupId>org.wso2.identity.customer.data.service</groupId>
         <artifactId>extensions</artifactId>
-        <version>0.1.15</version>
+        <version>0.1.16-SNAPSHOT</version>
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
