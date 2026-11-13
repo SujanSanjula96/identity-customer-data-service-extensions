@@ -110,6 +110,67 @@
                 <version>${org.wso2.carbon.identity.organization.management.core.version}</version>
             </dependency>
             <dependency>
+                <groupId>org.wso2.carbon.identity.framework</groupId>
+                <artifactId>org.wso2.carbon.identity.application.mgt</artifactId>
+                <version>${carbon.identity.framework.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.wso2.carbon.identity.framework</groupId>
+                <artifactId>org.wso2.carbon.identity.application.common</artifactId>
+                <version>${carbon.identity.framework.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.wso2.carbon.identity.framework</groupId>
+                <artifactId>org.wso2.carbon.identity.api.resource.mgt</artifactId>
+                <version>${carbon.identity.framework.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.wso2.carbon.identity.organization.management</groupId>
+                <artifactId>org.wso2.carbon.identity.organization.management.application</artifactId>
+                <version>${org.wso2.carbon.identity.organization.management.version}</version>
+                <exclusions>
+                    <!-- Only the application sharing API is used, and the IS runtime provides the rest. -->
+                    <exclusion>
+                        <groupId>*</groupId>
+                        <artifactId>*</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+            <dependency>
+                <groupId>org.wso2.carbon.identity.organization.management</groupId>
+                <artifactId>org.wso2.carbon.identity.organization.resource.sharing.policy.management</artifactId>
+                <version>${org.wso2.carbon.identity.organization.management.version}</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>*</groupId>
+                        <artifactId>*</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+            <dependency>
+                <groupId>org.wso2.carbon.identity.inbound.auth.oauth2</groupId>
+                <artifactId>org.wso2.carbon.identity.oauth</artifactId>
+                <version>${identity.inbound.auth.oauth.version}</version>
+                <exclusions>
+                    <!-- Only the OAuth admin service API is used, and the IS runtime provides the rest. -->
+                    <exclusion>
+                        <groupId>*</groupId>
+                        <artifactId>*</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+            <dependency>
+                <groupId>org.wso2.carbon.identity.inbound.auth.oauth2</groupId>
+                <artifactId>org.wso2.carbon.identity.oauth.common</artifactId>
+                <version>${identity.inbound.auth.oauth.version}</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>*</groupId>
+                        <artifactId>*</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+            <dependency>
                 <groupId>org.wso2.securevault</groupId>
                 <artifactId>org.wso2.securevault</artifactId>
                 <version>${wso2.securevault.version}</version>
@@ -322,6 +383,15 @@
         <org.wso2.carbon.identity.organization.management.core.version.range>[1.0.0, 2.0.0)
         </org.wso2.carbon.identity.organization.management.core.version.range>
         <commons-lang.wso2.osgi.version.range>[2.6.0, 3.0.0)</commons-lang.wso2.osgi.version.range>
+        <identity.inbound.auth.oauth.version>7.1.10</identity.inbound.auth.oauth.version>
+        <identity.inbound.auth.oauth.imp.pkg.version.range>[7.0.0, 8.0.0)
+        </identity.inbound.auth.oauth.imp.pkg.version.range>
+        <carbon.user.api.imp.pkg.version.range>[1.0.0, 2.0.0)</carbon.user.api.imp.pkg.version.range>
+        <!-- Compiled against a release built for Java 8. The pack provides a later 2.x release. -->
+        <org.wso2.carbon.identity.organization.management.version>2.0.17
+        </org.wso2.carbon.identity.organization.management.version>
+        <org.wso2.carbon.identity.organization.management.imp.pkg.version.range>[1.0.0, 3.0.0)
+        </org.wso2.carbon.identity.organization.management.imp.pkg.version.range>
     </properties>
 
 </project>
