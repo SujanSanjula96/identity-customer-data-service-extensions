@@ -18,8 +18,11 @@
 
 package org.wso2.identity.cds.event.handler;
 
+import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.wso2.carbon.identity.core.context.IdentityContext;
+import org.wso2.carbon.identity.core.context.model.Flow;
 import org.wso2.carbon.identity.event.IdentityEventException;
 import org.wso2.carbon.identity.event.event.Event;
 import org.wso2.carbon.identity.event.handler.AbstractEventHandler;
@@ -80,7 +83,7 @@ public class IdentityEventHandler extends AbstractEventHandler {
                     return;
                 }
 
-                String profileCookie = (String) filteredUserClaims.get(PROFILE_COOKIE_CLAIM);
+                String profileCookie = resolveAnonymousProfileTracker(filteredUserClaims);
                 String userId = (String) filteredUserClaims.get(USER_ID_CLAIM);
                 Map<String, Object> profileSyncPayload = new HashMap<>();
                 profileSyncPayload.put(PROFILE_COOKIE, profileCookie);
@@ -146,6 +149,27 @@ public class IdentityEventHandler extends AbstractEventHandler {
     @Override
     public String getName() {
         return "cds.identity.event.handler";
+    }
+
+    /**
+     * Resolves the anonymous profile tracker of the user that is being added. The tracker is read from the
+     * current flow in the identity context. If the flow does not carry it, the value of the legacy
+     * cdsProfile claim is used.
+     *
+     * @param userClaims The WSO2 claims of the user.
+     * @return The anonymous profile tracker, or null if it is not available.
+     */
+    private String resolveAnonymousProfileTracker(Map<String, Object> userClaims) {
+
+        Flow flow = IdentityContext.getThreadLocalIdentityContext().getCurrentFlow();
+        if (flow != null && StringUtils.isNotBlank(flow.getAnonymousProfileTracker())) {
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("Resolved the anonymous profile tracker from the identity context flow: " +
+                        flow.getName());
+            }
+            return flow.getAnonymousProfileTracker();
+        }
+        return (String) userClaims.get(PROFILE_COOKIE_CLAIM);
     }
 
     private boolean isCDSEnabled(String tenantDomain) {
