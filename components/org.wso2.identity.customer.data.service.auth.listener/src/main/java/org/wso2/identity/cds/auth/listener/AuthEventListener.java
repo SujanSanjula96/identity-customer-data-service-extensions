@@ -146,7 +146,10 @@ public class AuthEventListener extends AbstractEventHandler {
                             LOG.debug("Anonymous profile tracker captured during logout.");
                         }
                     }
-                    LOG.debug("Cookie captured during logout: " + cookieValue);
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("CDS profile identifier is " + (StringUtils.isNotBlank(cookieValue) ?
+                                "available" : "not available") + " during logout.");
+                    }
 
                     Map<String, Object> profileSyncPayload = new HashMap<>();
                     profileSyncPayload.put(USER_ID, userId);

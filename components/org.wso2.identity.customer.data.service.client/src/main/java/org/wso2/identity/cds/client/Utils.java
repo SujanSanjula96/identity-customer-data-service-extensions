@@ -19,6 +19,8 @@
 package org.wso2.identity.cds.client;
 
 import org.apache.commons.lang.StringUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.wso2.carbon.identity.core.util.IdentityUtil;
 import org.wso2.securevault.SecretResolver;
 import org.wso2.securevault.SecretResolverFactory;
@@ -32,6 +34,20 @@ import java.util.Properties;
  * This class contains utility methods for the Customer Data Management Service client.
  */
 public class Utils {
+
+    private static final Log LOG = LogFactory.getLog(Utils.class);
+
+    private static final String CONNECT_TIMEOUT = "CustomerDataService.ConnectTimeout";
+    private static final String READ_TIMEOUT = "CustomerDataService.ReadTimeout";
+    private static final String CONNECTION_REQUEST_TIMEOUT = "CustomerDataService.ConnectionRequestTimeout";
+    private static final String MAX_CONNECTIONS = "CustomerDataService.MaxConnections";
+
+    // Default timeouts in milliseconds. The calls to CDS run on the Identity Server user management and login
+    // threads, so the timeouts are short.
+    static final int DEFAULT_CONNECT_TIMEOUT = 2000;
+    static final int DEFAULT_READ_TIMEOUT = 5000;
+    static final int DEFAULT_CONNECTION_REQUEST_TIMEOUT = 2000;
+    static final int DEFAULT_MAX_CONNECTIONS = 50;
 
     public static String getCDSServiceURL() {
         return IdentityUtil.getProperty("CustomerDataService.ServerURL");
@@ -61,6 +77,66 @@ public class Utils {
               .encodeToString(credentials.getBytes(StandardCharsets.UTF_8));
   }
 
+
+    /**
+     * Get the time in milliseconds to wait for a connection to CDS.
+     *
+     * @return The value of CustomerDataService.ConnectTimeout, or the default if it is not set or not valid.
+     */
+    public static int getConnectTimeout() {
+
+        return getPositiveIntProperty(CONNECT_TIMEOUT, DEFAULT_CONNECT_TIMEOUT);
+    }
+
+    /**
+     * Get the time in milliseconds to wait for data from CDS on an open connection.
+     *
+     * @return The value of CustomerDataService.ReadTimeout, or the default if it is not set or not valid.
+     */
+    public static int getReadTimeout() {
+
+        return getPositiveIntProperty(READ_TIMEOUT, DEFAULT_READ_TIMEOUT);
+    }
+
+    /**
+     * Get the time in milliseconds to wait for a free connection from the connection pool.
+     *
+     * @return The value of CustomerDataService.ConnectionRequestTimeout, or the default if it is not set or not
+     * valid.
+     */
+    public static int getConnectionRequestTimeout() {
+
+        return getPositiveIntProperty(CONNECTION_REQUEST_TIMEOUT, DEFAULT_CONNECTION_REQUEST_TIMEOUT);
+    }
+
+    /**
+     * Get the maximum number of connections to CDS.
+     *
+     * @return The value of CustomerDataService.MaxConnections, or the default if it is not set or not valid.
+     */
+    public static int getMaxConnections() {
+
+        return getPositiveIntProperty(MAX_CONNECTIONS, DEFAULT_MAX_CONNECTIONS);
+    }
+
+    private static int getPositiveIntProperty(String key, int defaultValue) {
+
+        String value = StringUtils.trimToNull(IdentityUtil.getProperty(key));
+        if (value == null) {
+            return defaultValue;
+        }
+        try {
+            int parsed = Integer.parseInt(value);
+            if (parsed > 0) {
+                return parsed;
+            }
+        } catch (NumberFormatException e) {
+            // Use the default value below.
+        }
+        LOG.warn("The value of " + key + " is not a positive integer: " + sanitizeForLog(value) +
+                ". The default value " + defaultValue + " is used.");
+        return defaultValue;
+    }
 
     public static boolean isCDSEnabled() {
         String cdsEnabled = IdentityUtil.getProperty("CustomerDataService.Enable");

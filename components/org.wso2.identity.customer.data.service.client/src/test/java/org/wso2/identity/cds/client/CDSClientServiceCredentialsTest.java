@@ -27,6 +27,7 @@ import org.testng.annotations.Test;
 import org.wso2.identity.cds.client.exception.CDSClientException;
 import org.wso2.identity.cds.client.exception.CDSException;
 import org.wso2.identity.cds.client.exception.CDSServerException;
+import org.wso2.identity.cds.client.internal.CDSHttpClientHolder;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -55,15 +56,24 @@ public class CDSClientServiceCredentialsTest {
     private String requestMethod;
     private String requestBody;
     private String requestAuthorization;
+    private long responseDelayMillis;
 
     @BeforeMethod
     public void setUp() throws IOException {
 
+        responseDelayMillis = 0;
         cds = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         cds.createContext(PATH, exchange -> {
             requestMethod = exchange.getRequestMethod();
             requestAuthorization = exchange.getRequestHeaders().getFirst("Authorization");
             requestBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            if (responseDelayMillis > 0) {
+                try {
+                    Thread.sleep(responseDelayMillis);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
             byte[] body = responseBody.getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(status, body.length == 0 ? -1 : body.length);
             try (OutputStream out = exchange.getResponseBody()) {
@@ -80,6 +90,7 @@ public class CDSClientServiceCredentialsTest {
     @AfterMethod
     public void tearDown() {
 
+        CDSHttpClientHolder.close();
         utils.close();
         cds.stop(0);
     }
@@ -146,5 +157,27 @@ public class CDSClientServiceCredentialsTest {
         } catch (CDSException e) {
             fail("Expected a CDSServerException, got " + e);
         }
+    }
+
+    @Test
+    public void testSyncFailsWhenCDSDoesNotRespondInTheReadTimeout() {
+
+        utils.when(Utils::getReadTimeout).thenReturn(200);
+        // The shared client reads the timeouts when it is created, so create it again with the read timeout above.
+        CDSHttpClientHolder.close();
+        respond(204, "");
+        responseDelayMillis = 3000;
+
+        long start = System.currentTimeMillis();
+        try {
+            CDSClient.syncServiceCredentials(TENANT, "acme-org-id", "acme-client", "acme-secret");
+            fail("Expected a CDSServerException.");
+        } catch (CDSServerException e) {
+            assertTrue(e.getMessage().contains("cannot be reached"));
+        } catch (CDSException e) {
+            fail("Expected a CDSServerException, got " + e);
+        }
+        assertTrue(System.currentTimeMillis() - start < responseDelayMillis,
+                "The call must stop at the read timeout and not wait for the response.");
     }
 }

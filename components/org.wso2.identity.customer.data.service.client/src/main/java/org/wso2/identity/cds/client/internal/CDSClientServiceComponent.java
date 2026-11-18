@@ -48,6 +48,7 @@ public class CDSClientServiceComponent {
     @Deactivate
     protected void deactivate(ComponentContext context) {
 
+        CDSHttpClientHolder.close();
         if (LOG.isDebugEnabled()) {
             LOG.debug("CDS client component is deactivated.");
         }
