@@ -46,6 +46,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.when;
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
@@ -171,6 +172,35 @@ public class CDSAuthorizedAPIListenerTest {
     }
 
     @Test
+    public void testDoesNotAuthorizeTheApplicationOfCDSToReadUsers() throws Exception {
+
+        // The user management APIs exist in the Identity Server, but CDS reads no users.
+        for (String identifier : Arrays.asList("/scim2/Users", "/o/scim2/Users")) {
+            APIResource resource = new APIResource.APIResourceBuilder().id("id:" + identifier)
+                    .identifier(identifier).name(identifier).build();
+            when(apiResourceManager.getAPIResourceByIdentifier(identifier, TENANT)).thenReturn(resource);
+            when(apiResourceManager.getAPIResourceById("id:" + identifier, TENANT)).thenReturn(resource);
+        }
+
+        List<AuthorizedScopes> authorizedScopes = new ArrayList<>();
+        listener.postGetAuthorizedScopes(authorizedScopes, CDS_APP, TENANT);
+        for (AuthorizedScopes scopes : authorizedScopes) {
+            for (String scope : scopes.getScopes()) {
+                assertFalse(scope.contains("user_mgt"), "A user management scope is granted: " + scope);
+            }
+        }
+
+        List<AuthorizedAPI> authorizedAPIs = new ArrayList<>();
+        listener.postGetAuthorizedAPIs(authorizedAPIs, CDS_APP, TENANT);
+        for (AuthorizedAPI authorizedAPI : authorizedAPIs) {
+            assertFalse(authorizedAPI.getAPIIdentifier().contains("/scim2/Users"),
+                    "A user management API is authorized: " + authorizedAPI.getAPIIdentifier());
+        }
+        assertNull(listener.postGetAuthorizedAPI(null, CDS_APP, "id:/scim2/Users", TENANT));
+        assertNull(listener.postGetAuthorizedAPI(null, CDS_APP, "id:/o/scim2/Users", TENANT));
+    }
+
+    @Test
     public void testAddsOnlyTheScopesTheApplicationLacks() throws Exception {
 
         List<AuthorizedScopes> authorizedScopes = new ArrayList<>();
@@ -221,7 +251,7 @@ public class CDSAuthorizedAPIListenerTest {
 
         List<AuthorizedAPI> authorizedAPIs = new ArrayList<>();
         AuthorizedAPI stored = new AuthorizedAPI();
-        stored.setAPIId("id:/scim2/Users");
+        stored.setAPIId("id:/api/server/v1/claim-dialects");
         authorizedAPIs.add(stored);
 
         listener.postGetAuthorizedAPIs(authorizedAPIs, CDS_APP, TENANT);
@@ -259,13 +289,13 @@ public class CDSAuthorizedAPIListenerTest {
             assertTrue(e.getMessage().contains(CDSServiceCredentialsManager.APPLICATION_NAME));
         }
         try {
-            listener.preDeleteAuthorizedAPI(CDS_APP, "id:/scim2/Users", TENANT);
+            listener.preDeleteAuthorizedAPI(CDS_APP, "id:/api/server/v1/claim-dialects", TENANT);
             fail("Expected removing an API to be refused.");
         } catch (IdentityApplicationManagementClientException e) {
             assertNotNull(e.getMessage());
         }
         try {
-            listener.prePatchAuthorizedAPI(CDS_APP, "id:/scim2/Users", Collections.singletonList("a"),
+            listener.prePatchAuthorizedAPI(CDS_APP, "id:/api/server/v1/claim-dialects", Collections.singletonList("a"),
                     Collections.emptyList(), TENANT);
             fail("Expected changing the scopes of an API to be refused.");
         } catch (IdentityApplicationManagementClientException e) {
