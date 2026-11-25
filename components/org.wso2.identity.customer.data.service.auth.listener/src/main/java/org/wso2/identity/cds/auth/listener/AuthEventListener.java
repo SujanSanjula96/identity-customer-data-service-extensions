@@ -137,7 +137,7 @@ public class AuthEventListener extends AbstractEventHandler {
                             cookieValue = extractCookieValue(cookieHeader, CDS_PROFILE_COOKIE);
                         }
                     }
-                    LOG.debug("Cookie captured during logout: " + cookieValue);
+                    LOG.debug("cds profile cookie captured during logout.");
 
                     Map<String, Object> profileSyncPayload = new HashMap<>();
                     profileSyncPayload.put(USER_ID, userId);

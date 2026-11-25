@@ -24,6 +24,7 @@ import org.mockito.Mockito;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
+import org.wso2.carbon.identity.core.util.IdentityUtil;
 import org.wso2.identity.cds.client.exception.CDSClientException;
 import org.wso2.identity.cds.client.exception.CDSException;
 import org.wso2.identity.cds.client.exception.CDSServerException;
@@ -36,6 +37,7 @@ import java.nio.charset.StandardCharsets;
 import static org.mockito.Mockito.mockStatic;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
@@ -59,6 +61,7 @@ public class CDSClientServiceCredentialsTest {
     @BeforeMethod
     public void setUp() throws IOException {
 
+        requestBody = null;
         cds = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         cds.createContext(PATH, exchange -> {
             requestMethod = exchange.getRequestMethod();
@@ -131,6 +134,24 @@ public class CDSClientServiceCredentialsTest {
             assertFalse(e.getDescription().contains("wrong-secret"));
         } catch (CDSException e) {
             fail("Expected a CDSClientException, got " + e);
+        }
+    }
+
+    // The request has the client secret and the admin credentials, so it is not sent over HTTP to another host.
+    @Test
+    public void testSyncIsNotSentToAnHttpURLOfAnotherHost() {
+
+        utils.when(Utils::getCDSServiceURL).thenCallRealMethod();
+        try (MockedStatic<IdentityUtil> identityUtil = mockStatic(IdentityUtil.class)) {
+            identityUtil.when(() -> IdentityUtil.getProperty("CustomerDataService.ServerURL"))
+                    .thenReturn("http://cds.example.com:" + cds.getAddress().getPort());
+            CDSClient.syncServiceCredentials(TENANT, "acme-org-id", "acme-client", "acme-secret");
+            fail("Expected a CDSServerException.");
+        } catch (CDSServerException e) {
+            assertTrue(e.getMessage().contains("HTTPS"));
+            assertNull(requestBody, "no request reaches CDS");
+        } catch (CDSException e) {
+            fail("Expected a CDSServerException, got " + e);
         }
     }
 

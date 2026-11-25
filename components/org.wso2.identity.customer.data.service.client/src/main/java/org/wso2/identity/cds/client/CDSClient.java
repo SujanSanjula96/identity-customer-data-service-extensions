@@ -124,8 +124,7 @@ public class CDSClient {
 
         try {
             String json = MAPPER.writeValueAsString(payload);
-            String url = String.format(ORGANIZATION_SYNC_API, Utils.getCDSServiceURL(),
-                    OrganizationPathResolver.pathOf(tenant));
+            String url = buildSyncAPI(ORGANIZATION_SYNC_API, tenant);
             doPost(url, json, tenant, "organization-sync");
         } catch (IOException e) {
             log.warn("I/O error while triggering CDD organization sync. tenant="
@@ -155,7 +154,7 @@ public class CDSClient {
         String serviceURL = Utils.getCDSServiceURL();
         String credentials = Utils.getBase64EncodedCredentials();
         if (StringUtils.isBlank(serviceURL) || StringUtils.isBlank(credentials)) {
-            String error = "The Customer Data Directory is not configured.";
+            String error = "The Customer Data Directory is not configured, or its URL does not use HTTPS.";
             throw new CDSServerException(error, error, null);
         }
 
@@ -201,6 +200,13 @@ public class CDSClient {
     private static void doPost(String url, String jsonBody, String tenant, String operation) throws IOException {
 
         String sanitizedTenant = Utils.sanitizeForLog(tenant);
+        if (url == null) {
+            if (log.isDebugEnabled()) {
+                log.debug("CDD " + Utils.sanitizeForLog(operation) + " is not sent for tenant: " + sanitizedTenant +
+                        ". The CDD URL is not configured or does not use HTTPS.");
+            }
+            return;
+        }
         try (CloseableHttpClient client = HttpClients.createDefault()) {
             HttpPost httpPost = new HttpPost(url);
             httpPost.setEntity(new StringEntity(jsonBody, StandardCharsets.UTF_8));
@@ -276,7 +282,7 @@ public class CDSClient {
         String serviceURL = Utils.getCDSServiceURL();
         String credentials = Utils.getBase64EncodedCredentials();
         if (StringUtils.isBlank(serviceURL) || StringUtils.isBlank(credentials)) {
-            String error = "The Customer Data Directory is not configured.";
+            String error = "The Customer Data Directory is not configured, or its URL does not use HTTPS.";
             throw new CDSServerException(error, error, null);
         }
 
@@ -355,14 +361,23 @@ public class CDSClient {
     // Build the Profile Sync API URL
     private static String buildProfileSyncAPI(String tenant) throws OrganizationManagementException {
 
-        return String.format(PROFILE_SYNC_API, Utils.getCDSServiceURL(), OrganizationPathResolver.pathOf(tenant));
+        return buildSyncAPI(PROFILE_SYNC_API, tenant);
     }
 
     // Build the Profile Schema Sync API URL
     private static String buildProfileSchemaSyncAPI(String tenant) throws OrganizationManagementException {
 
-        return String.format(PROFILE_SCHEMA_SYNC_API, Utils.getCDSServiceURL(),
-                OrganizationPathResolver.pathOf(tenant));
+        return buildSyncAPI(PROFILE_SCHEMA_SYNC_API, tenant);
+    }
+
+    // Build a sync API URL for the organization of the tenant, or return null if the CDS URL is not usable.
+    private static String buildSyncAPI(String format, String tenant) throws OrganizationManagementException {
+
+        String serviceURL = Utils.getCDSServiceURL();
+        if (StringUtils.isBlank(serviceURL)) {
+            return null;
+        }
+        return String.format(format, serviceURL, OrganizationPathResolver.pathOf(tenant));
     }
 
     private static final class CdsError {
