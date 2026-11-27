@@ -21,8 +21,6 @@ package org.wso2.identity.cds.client;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClients;
 import org.apache.http.ssl.SSLContexts;
 import org.wso2.carbon.base.MultitenantConstants;
 import org.wso2.carbon.core.util.KeyStoreManager;
@@ -67,22 +65,13 @@ final class ClientCertificate {
     }
 
     /**
-     * An HTTP client that presents the client certificate, or none when the key pair cannot be loaded: a CDD that
-     * does not require one still accepts the calls.
+     * The SSL context of the HTTP client of the calls to CDD, which presents the client certificate. Only a context
+     * that loaded is kept, so a keystore that was not ready yet is read again on the next call.
      *
-     * @return A new HTTP client, which the caller closes.
+     * @return The SSL context, or null when the key pair cannot be loaded: the client then presents no client
+     * certificate, and a CDD that does not require one still accepts the calls.
      */
-    static CloseableHttpClient newHttpClient() {
-
-        SSLContext context = getSSLContext();
-        if (context == null) {
-            return HttpClients.createDefault();
-        }
-        return HttpClients.custom().setSSLContext(context).build();
-    }
-
-    // Only a context that loaded is kept, so a keystore that was not ready yet is read again on the next call.
-    private static SSLContext getSSLContext() {
+    static SSLContext getSSLContext() {
 
         if (sslContext == null) {
             synchronized (ClientCertificate.class) {

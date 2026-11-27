@@ -24,7 +24,6 @@ import com.sun.net.httpserver.HttpsParameters;
 import com.sun.net.httpserver.HttpsServer;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
-import org.apache.http.impl.client.CloseableHttpClient;
 import org.mockito.MockedStatic;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
@@ -40,7 +39,11 @@ import java.nio.file.Paths;
 import java.security.KeyStore;
 import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
@@ -53,15 +56,19 @@ import javax.net.ssl.TrustManagerFactory;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotNull;
+import static org.testng.Assert.assertNotSame;
+import static org.testng.Assert.assertSame;
 import static org.testng.Assert.assertTrue;
 
 /**
- * Unit tests for {@link ClientCertificate}, against a stub CDD that asks for a client certificate and answers 401
- * without one, as CDD does on its sync endpoints with tls.require_client_cert on.
+ * Unit tests for {@link ClientCertificate} and the client of {@link CDSHttpClient} that presents it, against a stub
+ * CDD that asks for a client certificate and answers 401 without one, as CDD does on its sync endpoints with
+ * tls.require_client_cert on.
  */
 public class ClientCertificateTest {
 
@@ -81,6 +88,8 @@ public class ClientCertificateTest {
     private HttpsServer cdd;
     private Properties savedProperties;
     private final Map<String, String> properties = new HashMap<>();
+    // The client port of each request CDD answers, one per connection.
+    private final List<Integer> clientPorts = Collections.synchronizedList(new ArrayList<>());
     private MockedStatic<IdentityUtil> identityUtil;
 
     @BeforeMethod
@@ -116,7 +125,9 @@ public class ClientCertificateTest {
                 params.setSSLParameters(parameters);
             }
         });
+        clientPorts.clear();
         cdd.createContext("/", exchange -> {
+            clientPorts.add(exchange.getRemoteAddress().getPort());
             int status;
             try {
                 X509Certificate peer = (X509Certificate) ((HttpsExchange) exchange).getSSLSession()
@@ -142,6 +153,7 @@ public class ClientCertificateTest {
         System.setProperty("javax.net.ssl.trustStoreType", "PKCS12");
 
         properties.clear();
+        CDSHttpClient.reset();
         identityUtil = mockStatic(IdentityUtil.class);
         identityUtil.when(() -> IdentityUtil.getProperty(anyString())).thenAnswer(
                 invocation -> properties.get(invocation.<String>getArgument(0)));
@@ -157,6 +169,7 @@ public class ClientCertificateTest {
         }
         savedProperties.forEach((key, value) -> System.setProperty((String) key, (String) value));
         sslContextField().set(null, null);
+        CDSHttpClient.reset();
     }
 
     @Test
@@ -176,6 +189,59 @@ public class ClientCertificateTest {
 
             assertEquals(get(), 401);
             assertEquals(sslContextField().get(null), null, "the keystore is read again on the next call");
+        }
+    }
+
+    // The client of the calls to CDD is shared: one created while the keystore could not be read is replaced by one
+    // that presents the certificate, once the keystore can be read.
+    @Test
+    public void presentsTheKeyPairOnceThePrimaryKeystoreCanBeRead() throws Exception {
+
+        Object clientWithoutCertificate;
+        try (MockedStatic<KeyStoreManager> keyStoreManagers = mockStatic(KeyStoreManager.class)) {
+            keyStoreManagers.when(() -> KeyStoreManager.getInstance(MultitenantConstants.SUPER_TENANT_ID))
+                    .thenThrow(new IllegalStateException("the keystore is not ready"));
+            assertEquals(get(), 401);
+            clientWithoutCertificate = CDSHttpClient.get();
+        }
+        try (MockedStatic<KeyStoreManager> keyStoreManagers = primaryKeystore(keyStore)) {
+            assertEquals(get(), 204);
+            assertNotSame(CDSHttpClient.get(), clientWithoutCertificate);
+            Object clientWithCertificate = CDSHttpClient.get();
+            assertEquals(get(), 204);
+            assertSame(CDSHttpClient.get(), clientWithCertificate, "the client is created again only once");
+        }
+    }
+
+    // The calls share the connections of the pool, also when they present the client certificate.
+    @Test
+    public void reusesTheConnectionThatPresentedTheKeyPair() throws Exception {
+
+        try (MockedStatic<KeyStoreManager> keyStoreManagers = primaryKeystore(keyStore)) {
+            for (int i = 0; i < 3; i++) {
+                assertEquals(get(), 204);
+            }
+        }
+        assertEquals(new HashSet<>(clientPorts).size(), 1, "one connection for the three calls: " + clientPorts);
+    }
+
+    // Only getting the client reads a key pair that did not load again, so a call to CDD, which also gets a request
+    // config, reads it, and logs that it cannot, once.
+    @Test
+    public void readsAKeyPairThatDidNotLoadOncePerCall() throws Exception {
+
+        try (MockedStatic<KeyStoreManager> keyStoreManagers = mockStatic(KeyStoreManager.class)) {
+            keyStoreManagers.when(() -> KeyStoreManager.getInstance(MultitenantConstants.SUPER_TENANT_ID))
+                    .thenThrow(new IllegalStateException("the keystore is not ready"));
+
+            for (int call = 0; call < 2; call++) {
+                CDSHttpClient.get();
+                CDSHttpClient.adminRequestConfig();
+                CDSHttpClient.requestConfig();
+                CDSHttpClient.maxConnections();
+            }
+            keyStoreManagers.verify(() -> KeyStoreManager.getInstance(MultitenantConstants.SUPER_TENANT_ID),
+                    times(2));
         }
     }
 
@@ -259,11 +325,11 @@ public class ClientCertificateTest {
         return sslContext;
     }
 
+    // The shared client of the calls to CDD, which the calls do not close.
     private int get() throws Exception {
 
-        try (CloseableHttpClient client = ClientCertificate.newHttpClient();
-             CloseableHttpResponse response = client.execute(
-                     new HttpGet("https://localhost:" + cdd.getAddress().getPort() + "/"))) {
+        try (CloseableHttpResponse response = CDSHttpClient.get().execute(
+                new HttpGet("https://localhost:" + cdd.getAddress().getPort() + "/"))) {
             return response.getStatusLine().getStatusCode();
         }
     }

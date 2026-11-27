@@ -35,9 +35,19 @@ import org.wso2.identity.cds.client.exception.CDSServerException;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
+
+import static org.wso2.carbon.identity.event.IdentityEventConstants.Event.POST_ADD_USER;
+import static org.wso2.carbon.identity.event.IdentityEventConstants.Event.POST_DELETE_USER_WITH_ID;
+import static org.wso2.carbon.identity.event.IdentityEventConstants.Event.POST_SET_USER_CLAIM_VALUES_WITH_ID;
+import static org.wso2.carbon.identity.event.IdentityEventConstants.Event.POST_SET_USER_CLAIM_VALUE_WITH_ID;
 
 /**
  * This class handles communication with the Customer Data Service (CDS).
@@ -72,6 +82,14 @@ public class CDSClient {
     private static final int HTTP_METHOD_NOT_ALLOWED = 405;
     private static final String CDS_NOT_ENABLED_ERROR_CODE = "CDS-16001";
     private static final String SERVICE_CREDENTIALS_NOT_CONFIGURED_ERROR_CODE = "CDS-16004";
+    private static final String USER_ID = "userId";
+    // The syncs of these user events are sent again once when they fail without a response or with a 5xx status.
+    // CDS cannot recover them from a later event: a lost delete, for example, leaves the profile of the deleted
+    // user in CDS. CDS applies them by user ID, so a sync that CDS already applied is safe to send again.
+    static final int USER_SYNC_MAX_ATTEMPTS = 2;
+    private static final Set<String> RETRIED_USER_EVENTS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+            POST_ADD_USER, POST_DELETE_USER_WITH_ID, POST_SET_USER_CLAIM_VALUE_WITH_ID,
+            POST_SET_USER_CLAIM_VALUES_WITH_ID)));
 
     // Trigger identity data sync in CDS
     public static void triggerIdentityDataSync(String event, Map<String, Object> payload, String tenant) {
@@ -79,7 +97,7 @@ public class CDSClient {
         try {
             String json = MAPPER.writeValueAsString(payload);
             String url = buildProfileSyncAPI(tenant);
-            doPost(url, json, tenant, "identity-data-sync");
+            sendUserSync(url, json, tenant, "identity-data-sync", event, payload.get(USER_ID));
         } catch (IOException e) {
             log.warn("I/O error while triggering CDD identity data sync. tenant="
                     + Utils.sanitizeForLog(tenant), e);
@@ -95,7 +113,7 @@ public class CDSClient {
         try {
             String json = MAPPER.writeValueAsString(payload);
             String url = buildProfileSyncAPI(tenant);
-            doPost(url, json, tenant, "profile-sync");
+            sendUserSync(url, json, tenant, "profile-sync", event, payload.get(USER_ID));
         } catch (IOException e) {
             log.warn("I/O error while triggering CDD profile sync. tenant="
                     + Utils.sanitizeForLog(tenant), e);
@@ -158,8 +176,10 @@ public class CDSClient {
         }
 
         String sanitizedTenant = Utils.sanitizeForLog(tenant);
-        try (CloseableHttpClient client = ClientCertificate.newHttpClient()) {
+        try {
+            CloseableHttpClient client = CDSHttpClient.get();
             HttpPost httpPost = new HttpPost(String.format(CONFIG_SYNC_API, serviceURL, tenant));
+            httpPost.setConfig(CDSHttpClient.adminRequestConfig());
             httpPost.setEntity(new StringEntity(
                     MAPPER.writeValueAsString(Collections.singletonMap(CDS_ENABLED, cdsEnabled)),
                     StandardCharsets.UTF_8));
@@ -199,47 +219,123 @@ public class CDSClient {
     private static void doPost(String url, String jsonBody, String tenant, String operation) throws IOException {
 
         String sanitizedTenant = Utils.sanitizeForLog(tenant);
-        try (CloseableHttpClient client = ClientCertificate.newHttpClient()) {
-            HttpPost httpPost = new HttpPost(url);
-            httpPost.setEntity(new StringEntity(jsonBody, StandardCharsets.UTF_8));
-            httpPost.setHeader(CONTENT_TYPE, APPLICATION_JSON);
-            httpPost.setHeader(AUTHORIZATION, "Basic " + Utils.getBase64EncodedCredentials());
+        PostResult result = post(url, jsonBody);
 
-            try (CloseableHttpResponse response = client.execute(httpPost)) {
-                int statusCode = response.getStatusLine().getStatusCode();
-                String responseBody = "";
-
-                if (response.getEntity() != null && response.getEntity().getContent() != null) {
-                    responseBody = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
-                }
-
-                if (statusCode == 200 || statusCode == 204) {
-                    if (log.isDebugEnabled()) {
-                        log.debug("CDD " + Utils.sanitizeForLog(operation) + " succeeded for tenant: " +
-                                sanitizedTenant);
-                    }
-                    return;
-                }
-
-                CdsError cdsError = parseCdsError(responseBody);
-
-                if (isCdsNotEnabled(statusCode, cdsError.code)) {
-                    if (log.isDebugEnabled()) {
-                        log.debug("CDD " + Utils.sanitizeForLog(operation) + " skipped as CDD is not enabled for " +
-                                "tenant: " + sanitizedTenant);
-                    }
-                    return;
-                }
-
-                log.warn(String.format("CDD %s failed for tenant=%s with status=%d, code=%s, message=%s, " +
-                                "description=%s",
-                        Utils.sanitizeForLog(operation),
-                        sanitizedTenant,
-                        statusCode,
-                        Utils.sanitizeForLog(cdsError.code),
-                        Utils.sanitizeForLog(cdsError.message),
-                        Utils.sanitizeForLog(cdsError.description)));
+        if (result.succeeded()) {
+            if (log.isDebugEnabled()) {
+                log.debug("CDD " + Utils.sanitizeForLog(operation) + " succeeded for tenant: " +
+                        sanitizedTenant);
             }
+            return;
+        }
+
+        if (result.isCdsNotEnabled()) {
+            if (log.isDebugEnabled()) {
+                log.debug("CDD " + Utils.sanitizeForLog(operation) + " skipped as CDD is not enabled for " +
+                        "tenant: " + sanitizedTenant);
+            }
+            return;
+        }
+
+        log.warn(String.format("CDD %s failed for tenant=%s with status=%d, code=%s, message=%s, " +
+                        "description=%s",
+                Utils.sanitizeForLog(operation),
+                sanitizedTenant,
+                result.statusCode,
+                Utils.sanitizeForLog(result.cdsError.code),
+                Utils.sanitizeForLog(result.cdsError.message),
+                Utils.sanitizeForLog(result.cdsError.description)));
+    }
+
+    /**
+     * Send the sync of a user event to CDS. The sync of an event in {@link #RETRIED_USER_EVENTS} that fails without a
+     * response or with a 5xx status is sent again once, and a WARN with the user ID is logged only when every attempt
+     * fails. The sync of any other event, such as a sign-in, is sent once, as CDS gets it again with a later event.
+     *
+     * @param url       URL of the sync API.
+     * @param jsonBody  Body of the sync.
+     * @param tenant    Tenant domain.
+     * @param operation Name of the sync, for the logs.
+     * @param event     Name of the user event.
+     * @param userId    ID of the user, for the logs.
+     * @throws IOException If the sync of an event that is not retried cannot be sent.
+     */
+    private static void sendUserSync(String url, String jsonBody, String tenant, String operation, String event,
+                                     Object userId) throws IOException {
+
+        if (!RETRIED_USER_EVENTS.contains(event)) {
+            doPost(url, jsonBody, tenant, operation);
+            return;
+        }
+
+        String sanitizedOperation = Utils.sanitizeForLog(operation);
+        String sanitizedUserId = Utils.sanitizeForLog(userId);
+        String sanitizedTenant = Utils.sanitizeForLog(tenant);
+        String sanitizedEvent = Utils.sanitizeForLog(event);
+        List<String> failures = new ArrayList<>();
+        for (int attempt = 1; attempt <= USER_SYNC_MAX_ATTEMPTS; attempt++) {
+            try {
+                PostResult result = post(url, jsonBody);
+                if (result.succeeded() || result.isCdsNotEnabled()) {
+                    if (log.isDebugEnabled()) {
+                        log.debug(String.format("CDD %s of event %s for user: %s, tenant: %s %s on attempt %d.",
+                                sanitizedOperation, sanitizedEvent, sanitizedUserId, sanitizedTenant,
+                                result.succeeded() ? "succeeded" : "skipped as CDD is not enabled", attempt));
+                    }
+                    return;
+                }
+                if (!result.isServerError()) {
+                    // CDS refused the sync, so sending it again would fail the same way.
+                    log.warn(String.format("CDD %s failed for user: %s, tenant: %s, event: %s. The change is not " +
+                                    "synced to CDD. status=%d, code=%s, message=%s, description=%s",
+                            sanitizedOperation, sanitizedUserId, sanitizedTenant, sanitizedEvent,
+                            result.statusCode, Utils.sanitizeForLog(result.cdsError.code),
+                            Utils.sanitizeForLog(result.cdsError.message),
+                            Utils.sanitizeForLog(result.cdsError.description)));
+                    return;
+                }
+                failures.add("status " + result.statusCode + ", code " + Utils.sanitizeForLog(result.cdsError.code));
+            } catch (IOException e) {
+                failures.add(Utils.sanitizeForLog(e.getClass().getSimpleName() + ": " + e.getMessage()));
+            }
+            if (attempt < USER_SYNC_MAX_ATTEMPTS && log.isDebugEnabled()) {
+                log.debug(String.format("CDD %s of event %s failed for user: %s, tenant: %s (%s). Retrying once.",
+                        sanitizedOperation, sanitizedEvent, sanitizedUserId, sanitizedTenant,
+                        failures.get(failures.size() - 1)));
+            }
+        }
+        log.warn(String.format("CDD %s failed for user: %s, tenant: %s, event: %s, after %d attempts (%s). " +
+                        "The change is not synced to CDD.", sanitizedOperation, sanitizedUserId, sanitizedTenant,
+                sanitizedEvent, USER_SYNC_MAX_ATTEMPTS, String.join("; ", failures)));
+    }
+
+    /**
+     * Send a POST request to CDS and read its response.
+     *
+     * @param url      URL of the API.
+     * @param jsonBody Body of the request.
+     * @return The status and the error of the response.
+     * @throws IOException If the request cannot be sent or the response cannot be read.
+     */
+    private static PostResult post(String url, String jsonBody) throws IOException {
+
+        CloseableHttpClient client = CDSHttpClient.get();
+        HttpPost httpPost = new HttpPost(url);
+        httpPost.setEntity(new StringEntity(jsonBody, StandardCharsets.UTF_8));
+        httpPost.setHeader(CONTENT_TYPE, APPLICATION_JSON);
+        httpPost.setHeader(AUTHORIZATION, "Basic " + Utils.getBase64EncodedCredentials());
+
+        try (CloseableHttpResponse response = client.execute(httpPost)) {
+            int statusCode = response.getStatusLine().getStatusCode();
+            String responseBody = "";
+
+            if (response.getEntity() != null && response.getEntity().getContent() != null) {
+                responseBody = new String(response.getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+            }
+            if (statusCode == HTTP_OK || statusCode == HTTP_NO_CONTENT) {
+                return new PostResult(statusCode, null);
+            }
+            return new PostResult(statusCode, parseCdsError(responseBody));
         }
     }
 
@@ -285,8 +381,10 @@ public class CDSClient {
         event.put(CLIENT_SECRET, clientSecret);
 
         String sanitizedTenant = Utils.sanitizeForLog(tenant);
-        try (CloseableHttpClient client = ClientCertificate.newHttpClient()) {
+        try {
+            CloseableHttpClient client = CDSHttpClient.get();
             HttpPost httpPost = new HttpPost(String.format(SERVICE_CREDENTIALS_SYNC_API, serviceURL, tenant));
+            httpPost.setConfig(CDSHttpClient.adminRequestConfig());
             httpPost.setEntity(new StringEntity(MAPPER.writeValueAsString(event), StandardCharsets.UTF_8));
             httpPost.setHeader(CONTENT_TYPE, APPLICATION_JSON);
             httpPost.setHeader(AUTHORIZATION, "Basic " + credentials);
@@ -361,6 +459,31 @@ public class CDSClient {
 
         return String.format(PROFILE_SCHEMA_SYNC_API, Utils.getCDSServiceURL(),
                 OrganizationPathResolver.pathOf(tenant));
+    }
+
+    /**
+     * The status of a response of CDS, and the error it returned when it did not succeed.
+     */
+    private static final class PostResult {
+        private final int statusCode;
+        private final CdsError cdsError;
+
+        private PostResult(int statusCode, CdsError cdsError) {
+            this.statusCode = statusCode;
+            this.cdsError = cdsError;
+        }
+
+        private boolean succeeded() {
+            return cdsError == null;
+        }
+
+        private boolean isCdsNotEnabled() {
+            return cdsError != null && CDSClient.isCdsNotEnabled(statusCode, cdsError.code);
+        }
+
+        private boolean isServerError() {
+            return statusCode >= HTTP_SERVER_ERROR_MIN;
+        }
     }
 
     private static final class CdsError {
