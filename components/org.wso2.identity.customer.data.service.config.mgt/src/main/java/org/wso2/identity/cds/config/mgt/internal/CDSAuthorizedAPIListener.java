@@ -32,7 +32,6 @@ import org.wso2.carbon.identity.application.mgt.ApplicationManagementService;
 import org.wso2.carbon.identity.application.mgt.listener.AbstractAuthorizedAPIManagementListener;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -52,11 +51,12 @@ public class CDSAuthorizedAPIListener extends AbstractAuthorizedAPIManagementLis
 
     /**
      * The management APIs CDS asks a token for, with the scopes it asks for. They have to match the scope of
-     * FetchToken in CDS. The /o APIs are those of a sub organization, which a token of the shared application
-     * reaches. The OAuth2 Introspection API gives the scope that CDS asks a token for to introspect the tokens of
-     * its requests: the Identity Server takes no client authentication at its introspection endpoint by default,
-     * only a bearer token with that scope. The endpoint of the primary organization introspects the tokens of its
-     * sub organizations too, so CDS needs no /o introspection scope.
+     * FetchToken in CDS. CDS reads no users, so the application gets no user management API. The /o APIs are those
+     * of a sub organization, which a token of the shared application reaches. The OAuth2 Introspection API gives the
+     * scope that CDS asks a token for to introspect the tokens of its requests: the Identity Server takes no client
+     * authentication at its introspection endpoint by default, only a bearer token with that scope. The endpoint of
+     * the primary organization introspects the tokens of its sub organizations too, so CDS needs no /o
+     * introspection scope.
      */
     static final Map<String, List<String>> MANAGEMENT_API_SCOPES;
 
@@ -64,11 +64,9 @@ public class CDSAuthorizedAPIListener extends AbstractAuthorizedAPIManagementLis
         Map<String, List<String>> scopes = new LinkedHashMap<>();
         scopes.put("/api/server/v1/applications", Collections.singletonList("internal_application_mgt_view"));
         scopes.put("/api/server/v1/claim-dialects", Collections.singletonList("internal_claim_meta_view"));
-        scopes.put("/scim2/Users", Arrays.asList("internal_user_mgt_list", "internal_user_mgt_view"));
         scopes.put("/api/server/v1/organizations", Collections.singletonList("internal_organization_view"));
         scopes.put("/o/api/server/v1/applications", Collections.singletonList("internal_org_application_mgt_view"));
         scopes.put("/o/api/server/v1/claim-dialects", Collections.singletonList("internal_org_claim_meta_view"));
-        scopes.put("/o/scim2/Users", Arrays.asList("internal_org_user_mgt_list", "internal_org_user_mgt_view"));
         scopes.put("/o/api/server/v1/organizations", Collections.singletonList("internal_org_organization_view"));
         scopes.put("/oauth2/introspect", Collections.singletonList("internal_oauth2_introspect"));
         MANAGEMENT_API_SCOPES = Collections.unmodifiableMap(scopes);
