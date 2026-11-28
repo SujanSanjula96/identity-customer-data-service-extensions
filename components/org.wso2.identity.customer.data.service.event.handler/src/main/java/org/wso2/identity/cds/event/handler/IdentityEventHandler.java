@@ -23,9 +23,14 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.wso2.carbon.identity.core.context.IdentityContext;
 import org.wso2.carbon.identity.core.context.model.AnonymousUser;
+import org.wso2.carbon.identity.core.util.IdentityUtil;
 import org.wso2.carbon.identity.event.IdentityEventException;
 import org.wso2.carbon.identity.event.event.Event;
 import org.wso2.carbon.identity.event.handler.AbstractEventHandler;
+import org.wso2.carbon.identity.organization.management.service.exception.OrganizationManagementException;
+import org.wso2.carbon.identity.organization.management.service.util.OrganizationManagementUtil;
+import org.wso2.carbon.user.core.UserStoreException;
+import org.wso2.carbon.user.core.common.AbstractUserStoreManager;
 import org.wso2.identity.cds.client.CDSClient;
 import org.wso2.identity.cds.config.mgt.CDSConfigService;
 import org.wso2.identity.cds.config.mgt.exception.CDSConfigMgtException;
@@ -38,8 +43,11 @@ import static org.wso2.carbon.identity.event.IdentityEventConstants.Event.POST_A
 import static org.wso2.carbon.identity.event.IdentityEventConstants.Event.POST_DELETE_USER_WITH_ID;
 import static org.wso2.carbon.identity.event.IdentityEventConstants.Event.POST_SET_USER_CLAIM_VALUES_WITH_ID;
 import static org.wso2.carbon.identity.event.IdentityEventConstants.Event.POST_SET_USER_CLAIM_VALUE_WITH_ID;
+import static org.wso2.carbon.identity.event.IdentityEventConstants.EventProperty.USER_STORE_MANAGER;
 import static org.wso2.identity.cds.event.handler.Constants.CLAIMS;
+import static org.wso2.identity.cds.event.handler.Constants.MANAGED_ORGANIZATION_CLAIM;
 import static org.wso2.identity.cds.event.handler.Constants.ORG_HANDLE;
+import static org.wso2.identity.cds.event.handler.Constants.PROCESS_ADD_SHARED_USER;
 import static org.wso2.identity.cds.event.handler.Constants.PROFILE_COOKIE;
 import static org.wso2.identity.cds.event.handler.Constants.TENANT_DOMAIN;
 import static org.wso2.identity.cds.event.handler.Constants.USER_CLAIMS_PROPERTY;
@@ -63,6 +71,9 @@ public class IdentityEventHandler extends AbstractEventHandler {
             return;
         }
         String eventName = event.getEventName();
+        if (isSharedUserEvent(eventName, properties)) {
+            return;
+        }
         if (POST_ADD_USER.equals(eventName)) {
             try {
                 Map<String, Object> userClaims = (Map<String, Object>) properties.get(USER_CLAIMS_PROPERTY);
@@ -166,6 +177,76 @@ public class IdentityEventHandler extends AbstractEventHandler {
             LOG.debug("Resolved the anonymous profile tracker from the anonymous user in the identity context.");
         }
         return anonymousUser.getAnonymousProfileTracker();
+    }
+
+    /**
+     * A shared user is the copy of a user of an ancestor organization, so CDS does not keep a profile for it. The
+     * Identity Server adds a shared user while the processAddSharedUser thread local property is set, and marks it
+     * with the managedOrg claim. The claim is stored only after the user is added, so the add event is recognized
+     * by the property, and a later claim update by the claim.
+     *
+     * @param eventName  Name of the event.
+     * @param properties Properties of the event.
+     * @return True if the event is about a shared user.
+     */
+    private boolean isSharedUserEvent(String eventName, Map<String, Object> properties) {
+
+        if (Boolean.parseBoolean(String.valueOf(IdentityUtil.threadLocalProperties.get()
+                .get(PROCESS_ADD_SHARED_USER)))) {
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("Skipping the CDD sync of event " + eventName + ", as a shared user is being added.");
+            }
+            return true;
+        }
+        if (!POST_SET_USER_CLAIM_VALUES_WITH_ID.equals(eventName) &&
+                !POST_SET_USER_CLAIM_VALUE_WITH_ID.equals(eventName)) {
+            return false;
+        }
+        Object userId = properties.get(USER_ID_PROPERTY);
+        String tenantDomain = (String) properties.get(TENANT_DOMAIN);
+        if (userId == null || !isOrganization(tenantDomain)) {
+            // Only an organization below the root has shared users.
+            return false;
+        }
+        if (StringUtils.isBlank(getManagedOrganization(properties.get(USER_STORE_MANAGER), userId.toString()))) {
+            return false;
+        }
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("Skipping the CDD sync of event " + eventName + " for the shared user: " + userId +
+                    " of tenant: " + tenantDomain);
+        }
+        return true;
+    }
+
+    private boolean isOrganization(String tenantDomain) {
+
+        if (StringUtils.isBlank(tenantDomain)) {
+            return false;
+        }
+        try {
+            return OrganizationManagementUtil.isOrganization(tenantDomain);
+        } catch (OrganizationManagementException e) {
+            LOG.debug("Could not check whether tenant: " + tenantDomain + " is an organization.", e);
+            return false;
+        }
+    }
+
+    /**
+     * Read the managedOrg claim of the user, as the Identity Server does to identify a shared user.
+     */
+    private String getManagedOrganization(Object userStoreManager, String userId) {
+
+        if (!(userStoreManager instanceof AbstractUserStoreManager)) {
+            return null;
+        }
+        try {
+            Map<String, String> claims = ((AbstractUserStoreManager) userStoreManager)
+                    .getUserClaimValuesWithID(userId, new String[]{MANAGED_ORGANIZATION_CLAIM}, null);
+            return claims == null ? null : claims.get(MANAGED_ORGANIZATION_CLAIM);
+        } catch (UserStoreException e) {
+            LOG.debug("Could not read the managed organization of user: " + userId, e);
+            return null;
+        }
     }
 
     private boolean isCDSEnabled(String tenantDomain) {

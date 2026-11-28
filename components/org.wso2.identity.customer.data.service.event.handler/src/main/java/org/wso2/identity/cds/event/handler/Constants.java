@@ -33,6 +33,11 @@ public class Constants {
     public static final String WSO2_CLAIMS_DIALECT = "http://wso2.org/claims/";
     public static final String USER_ID_CLAIM = "http://wso2.org/claims/userid";
 
+    // The Identity Server sets this thread local property while it adds a shared user to an organization.
+    public static final String PROCESS_ADD_SHARED_USER = "processAddSharedUser";
+    // The claim with which the Identity Server marks a shared user: the organization that manages the user.
+    public static final String MANAGED_ORGANIZATION_CLAIM = "http://wso2.org/claims/identity/managedOrg";
+
     // Organization management events and their properties.
     public static final String POST_ADD_ORGANIZATION = "POST_ADD_ORGANIZATION";
     public static final String POST_UPDATE_ORGANIZATION = "POST_UPDATE_ORGANIZATION";

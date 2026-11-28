@@ -26,7 +26,11 @@ import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 import org.wso2.carbon.identity.core.context.IdentityContext;
 import org.wso2.carbon.identity.core.context.model.AnonymousUser;
+import org.wso2.carbon.identity.core.util.IdentityUtil;
+import org.wso2.carbon.identity.event.IdentityEventConstants;
 import org.wso2.carbon.identity.event.event.Event;
+import org.wso2.carbon.identity.organization.management.service.util.OrganizationManagementUtil;
+import org.wso2.carbon.user.core.common.AbstractUserStoreManager;
 import org.wso2.identity.cds.client.CDSClient;
 import org.wso2.identity.cds.config.mgt.CDSConfigService;
 import org.wso2.identity.cds.event.handler.internal.EventHandlerDataHolder;
@@ -37,12 +41,14 @@ import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNull;
@@ -54,10 +60,13 @@ public class IdentityEventHandlerTest {
     private static final String CONTEXT_TRACKER = "c0ntext-tracker";
     private static final String CLAIM_TRACKER = "cl4im-tracker";
     private static final String TRACKER_CLAIM = "http://wso2.org/claims/cdsProfile";
+    private static final String SUB_ORG_TENANT_DOMAIN = "sub-org";
+    private static final String ROOT_ORG_ID = "10084a8d-113f-4211-a0d5-efe36b082211";
 
     private IdentityEventHandler handler;
     private CDSConfigService cdsConfigService;
     private MockedStatic<CDSClient> cdsClient;
+    private MockedStatic<OrganizationManagementUtil> organizationManagementUtil;
     private MockedStatic<IdentityContext> identityContextStatic;
     private IdentityContext identityContext;
 
@@ -81,11 +90,19 @@ public class IdentityEventHandlerTest {
         identityContext = mock(IdentityContext.class);
         identityContextStatic = mockStatic(IdentityContext.class);
         identityContextStatic.when(IdentityContext::getThreadLocalIdentityContext).thenReturn(identityContext);
+        when(cdsConfigService.isCDSEnabled(SUB_ORG_TENANT_DOMAIN)).thenReturn(true);
+        organizationManagementUtil = mockStatic(OrganizationManagementUtil.class);
+        organizationManagementUtil.when(() -> OrganizationManagementUtil.isOrganization(SUB_ORG_TENANT_DOMAIN))
+                .thenReturn(true);
+        organizationManagementUtil.when(() -> OrganizationManagementUtil.isOrganization(TENANT_DOMAIN))
+                .thenReturn(false);
     }
 
     @AfterMethod
     public void tearDown() {
 
+        IdentityUtil.threadLocalProperties.get().remove(Constants.PROCESS_ADD_SHARED_USER);
+        organizationManagementUtil.close();
         identityContextStatic.close();
         cdsClient.close();
         EventHandlerDataHolder.setCDSConfigService(null);
@@ -127,6 +144,80 @@ public class IdentityEventHandlerTest {
         handler.handleEvent(postAddUserEvent(null));
 
         assertProfileSyncWithoutTracker();
+    }
+
+    @Test
+    public void testAddOfSharedUserIsNotSynced() throws Exception {
+
+        IdentityUtil.threadLocalProperties.get().put(Constants.PROCESS_ADD_SHARED_USER, true);
+
+        handler.handleEvent(postAddUserEvent(null));
+
+        assertNoSync();
+    }
+
+    @Test
+    public void testClaimUpdateOfSharedUserIsNotSynced() throws Exception {
+
+        AbstractUserStoreManager userStoreManager = userStoreManagerWithManagedOrganization(ROOT_ORG_ID);
+
+        handler.handleEvent(claimUpdateEvent(SUB_ORG_TENANT_DOMAIN, userStoreManager));
+
+        assertNoSync();
+    }
+
+    @Test
+    public void testClaimUpdateOfOrganizationUserIsSynced() throws Exception {
+
+        AbstractUserStoreManager userStoreManager = userStoreManagerWithManagedOrganization(null);
+
+        handler.handleEvent(claimUpdateEvent(SUB_ORG_TENANT_DOMAIN, userStoreManager));
+
+        cdsClient.verify(() -> CDSClient.triggerIdentityDataSync(eq("POST_SET_USER_CLAIM_VALUES_WITH_ID"), anyMap(),
+                eq(SUB_ORG_TENANT_DOMAIN)));
+    }
+
+    @Test
+    public void testClaimUpdateInRootDoesNotReadTheManagedOrganization() throws Exception {
+
+        AbstractUserStoreManager userStoreManager = userStoreManagerWithManagedOrganization(ROOT_ORG_ID);
+
+        handler.handleEvent(claimUpdateEvent(TENANT_DOMAIN, userStoreManager));
+
+        cdsClient.verify(() -> CDSClient.triggerIdentityDataSync(eq("POST_SET_USER_CLAIM_VALUES_WITH_ID"), anyMap(),
+                eq(TENANT_DOMAIN)));
+        verify(userStoreManager, never()).getUserClaimValuesWithID(anyString(), any(String[].class), any());
+    }
+
+    private AbstractUserStoreManager userStoreManagerWithManagedOrganization(String managedOrganization)
+            throws Exception {
+
+        AbstractUserStoreManager userStoreManager = mock(AbstractUserStoreManager.class);
+        Map<String, String> claims = new HashMap<>();
+        if (managedOrganization != null) {
+            claims.put(Constants.MANAGED_ORGANIZATION_CLAIM, managedOrganization);
+        }
+        when(userStoreManager.getUserClaimValuesWithID(eq(USER_ID),
+                eq(new String[]{Constants.MANAGED_ORGANIZATION_CLAIM}), any())).thenReturn(claims);
+        return userStoreManager;
+    }
+
+    private Event claimUpdateEvent(String tenantDomain, AbstractUserStoreManager userStoreManager) {
+
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("http://wso2.org/claims/lastname", "Doe");
+        Map<String, Object> properties = new HashMap<>();
+        properties.put(Constants.TENANT_DOMAIN, tenantDomain);
+        properties.put(Constants.USER_ID_PROPERTY, USER_ID);
+        properties.put(Constants.USER_CLAIMS_PROPERTY, claims);
+        properties.put(IdentityEventConstants.EventProperty.USER_STORE_MANAGER, userStoreManager);
+        return new Event("POST_SET_USER_CLAIM_VALUES_WITH_ID", properties);
+    }
+
+    private void assertNoSync() {
+
+        cdsClient.verify(() -> CDSClient.triggerProfileSync(anyString(), anyMap(), anyString()), never());
+        cdsClient.verify(() -> CDSClient.triggerIdentityDataSync(anyString(), anyMap(), anyString()), never());
     }
 
     private void setAnonymousUser(String anonymousProfileTracker) {
