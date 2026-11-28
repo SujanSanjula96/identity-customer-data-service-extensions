@@ -31,6 +31,9 @@ import org.wso2.carbon.identity.event.event.Event;
 import org.wso2.carbon.identity.organization.management.service.model.Organization;
 import org.wso2.identity.cds.client.CDSClient;
 import org.wso2.identity.cds.client.Utils;
+import org.wso2.identity.cds.config.mgt.CDSConfigService;
+import org.wso2.identity.cds.config.mgt.exception.CDSConfigMgtServerException;
+import org.wso2.identity.cds.event.handler.internal.EventHandlerDataHolder;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -44,6 +47,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNull;
 
@@ -54,17 +58,20 @@ public class OrganizationEventHandlerTest {
 
     private Executor executor;
     private OrganizationEventHandler handler;
+    private CDSConfigService cdsConfigService;
     private MockedStatic<Utils> utils;
     private MockedStatic<IdentityTenantUtil> identityTenantUtil;
     private MockedStatic<CDSClient> cdsClient;
 
     @BeforeMethod
-    public void setUp() {
+    public void setUp() throws Exception {
 
         executor = mock(Executor.class);
         handler = new OrganizationEventHandler(executor);
+        cdsConfigService = mock(CDSConfigService.class);
+        when(cdsConfigService.isCDSEnabled(TENANT_DOMAIN)).thenReturn(true);
+        EventHandlerDataHolder.setCDSConfigService(cdsConfigService);
         utils = mockStatic(Utils.class);
-        utils.when(Utils::isCDSEnabled).thenReturn(true);
         utils.when(() -> Utils.sanitizeForLog(any())).thenReturn("");
         identityTenantUtil = mockStatic(IdentityTenantUtil.class);
         identityTenantUtil.when(IdentityTenantUtil::getTenantDomainFromContext).thenReturn(TENANT_DOMAIN);
@@ -77,6 +84,7 @@ public class OrganizationEventHandlerTest {
         cdsClient.close();
         identityTenantUtil.close();
         utils.close();
+        EventHandlerDataHolder.setCDSConfigService(null);
     }
 
     @DataProvider(name = "eventNames")
@@ -148,13 +156,39 @@ public class OrganizationEventHandlerTest {
     }
 
     @Test
-    public void testHandleEventWhenCdsIsDisabled() throws Exception {
+    public void testHandleEventWhenCdsIsDisabledForTheTenant() throws Exception {
 
-        utils.when(Utils::isCDSEnabled).thenReturn(false);
+        when(cdsConfigService.isCDSEnabled(TENANT_DOMAIN)).thenReturn(false);
         Map<String, Object> properties = new HashMap<>();
         properties.put("ORGANIZATION_ID", ORG_ID);
 
         handler.handleEvent(new Event("POST_ADD_ORGANIZATION", properties));
+
+        verify(executor, never()).execute(any(Runnable.class));
+        cdsClient.verify(() -> CDSClient.triggerOrganizationSync(anyMap(), anyString()), never());
+    }
+
+    @Test
+    public void testHandleEventWhenTheConfigServiceIsNotAvailable() throws Exception {
+
+        EventHandlerDataHolder.setCDSConfigService(null);
+        Map<String, Object> properties = new HashMap<>();
+        properties.put("ORGANIZATION_ID", ORG_ID);
+
+        handler.handleEvent(new Event("POST_ADD_ORGANIZATION", properties));
+
+        verify(executor, never()).execute(any(Runnable.class));
+    }
+
+    @Test
+    public void testHandleEventWhenTheConfigCannotBeRead() throws Exception {
+
+        when(cdsConfigService.isCDSEnabled(TENANT_DOMAIN))
+                .thenThrow(new CDSConfigMgtServerException("error", "error", "CDS-00000"));
+        Map<String, Object> properties = new HashMap<>();
+        properties.put("ORGANIZATION_ID", ORG_ID);
+
+        handler.handleEvent(new Event("POST_UPDATE_ORGANIZATION", properties));
 
         verify(executor, never()).execute(any(Runnable.class));
     }
@@ -177,6 +211,7 @@ public class OrganizationEventHandlerTest {
         handler.handleEvent(new Event("PRE_ADD_ORGANIZATION", properties));
 
         verify(executor, never()).execute(any(Runnable.class));
+        verify(cdsConfigService, never()).isCDSEnabled(anyString());
     }
 
     @Test

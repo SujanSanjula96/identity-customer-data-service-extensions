@@ -29,6 +29,9 @@ import org.wso2.carbon.identity.event.handler.AbstractEventHandler;
 import org.wso2.carbon.identity.organization.management.service.model.Organization;
 import org.wso2.identity.cds.client.CDSClient;
 import org.wso2.identity.cds.client.Utils;
+import org.wso2.identity.cds.config.mgt.CDSConfigService;
+import org.wso2.identity.cds.config.mgt.exception.CDSConfigMgtException;
+import org.wso2.identity.cds.event.handler.internal.EventHandlerDataHolder;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -72,11 +75,12 @@ public class OrganizationEventHandler extends AbstractEventHandler {
     @Override
     public void handleEvent(Event event) throws IdentityEventException {
 
-        if (!Utils.isCDSEnabled()) {
-            return;
-        }
         String cdsEvent = toCdsEvent(event.getEventName());
         if (cdsEvent == null) {
+            return;
+        }
+        String tenantDomain = IdentityTenantUtil.getTenantDomainFromContext();
+        if (!isCDSEnabled(tenantDomain)) {
             return;
         }
         String orgId = resolveOrganizationId(event.getEventProperties());
@@ -86,7 +90,6 @@ public class OrganizationEventHandler extends AbstractEventHandler {
             }
             return;
         }
-        String tenantDomain = IdentityTenantUtil.getTenantDomainFromContext();
         Map<String, Object> payload = new HashMap<>();
         payload.put(Constants.EVENT, cdsEvent);
         payload.put(ORG_ID, orgId);
@@ -129,6 +132,24 @@ public class OrganizationEventHandler extends AbstractEventHandler {
             return ((Organization) organization).getId();
         }
         return null;
+    }
+
+    /**
+     * CDS is enabled for the tenant only when it is enabled for the server and in the CDS config of the tenant.
+     * The CDS config service reads the config of the root organization for a sub organization.
+     */
+    private boolean isCDSEnabled(String tenantDomain) {
+
+        CDSConfigService cdsConfigService = EventHandlerDataHolder.getCDSConfigService();
+        if (cdsConfigService == null) {
+            return false;
+        }
+        try {
+            return cdsConfigService.isCDSEnabled(tenantDomain);
+        } catch (CDSConfigMgtException e) {
+            LOG.warn(e.getMessage() + ". CDD is not enabled for the tenant.", e);
+            return false;
+        }
     }
 
     @Override
